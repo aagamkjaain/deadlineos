@@ -47,7 +47,7 @@ export default function DashboardView({
   // Local states for interactive items
   const [appliedAIChanges, setAppliedAIChanges] = useState(false);
   const [checkedAlerts, setCheckedAlerts] = useState<string[]>([]);
-  
+
   // Anti-procrastination states
   const [scopeTrimming, setScopeTrimming] = useState(false);
   const [trimJustification, setTrimJustification] = useState<string | null>(null);
@@ -215,7 +215,7 @@ export default function DashboardView({
 
   const handlePostponeTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // prevent starting focus session
-    
+
     // Optimistic UI update
     setTasks(prevTasks => prevTasks.map(t => {
       if (t.id === taskId) {
@@ -247,7 +247,7 @@ export default function DashboardView({
     try {
       const subtaskStrings = targetTask.subtasks?.map(st => st.text) || [];
       const result = await generateScopeReduction(targetTask.title, subtaskStrings);
-      
+
       const trimmedSubtasks = result.subtasks.map(text => ({ text, completed: false }));
 
       const { supabase, isSupabaseConfigured } = await import('../services/supabase');
@@ -309,7 +309,7 @@ export default function DashboardView({
 
   return (
     <div className="space-y-10 pb-20 select-none animate-in fade-in duration-500">
-      
+
       {/* Dynamic Session HUD banner when active */}
       {sessionActive && focusTask && (
         <div className="bg-primary/10 border-y border-primary/30 py-3 px-10 -mx-10 flex justify-between items-center animate-in slide-in-from-top-4 duration-300">
@@ -351,7 +351,7 @@ export default function DashboardView({
                 You have postponed "<span className="text-error font-semibold">{highlyPostponedTask.title}</span>" {highlyPostponedTask.postponedCount} times. At your current pace, you risk missing the target milestone.
               </p>
             </div>
-            
+
             <button
               onClick={() => handleReduceScope(highlyPostponedTask.id)}
               disabled={!hasApiKey || scopeTrimming}
@@ -440,7 +440,7 @@ export default function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Today's Focus Card & Alerts/AI Panels */}
         <div className="lg:col-span-8 flex flex-col gap-8">
-          
+
           {/* Google Calendar MONTHLY App Grid View */}
           <div className="glass-card rounded-2xl border border-outline/30 p-6 space-y-6 bg-surface-container/20">
             <div className="flex justify-between items-center pb-2 border-b border-outline/20">
@@ -471,11 +471,10 @@ export default function DashboardView({
                 return (
                   <div
                     key={day.toISOString()}
-                    className={`min-h-[75px] p-1.5 border rounded-lg flex flex-col justify-between transition-all hover:bg-surface-container-high/30 select-none ${
-                      isToday
+                    className={`min-h-[75px] p-1.5 border rounded-lg flex flex-col justify-between transition-all hover:bg-surface-container-high/30 select-none ${isToday
                         ? 'border-primary bg-primary/5 ring-1 ring-primary/20 shadow-lg'
                         : 'border-outline/10 bg-surface-container-low/10'
-                    }`}
+                      }`}
                   >
                     <div className="flex justify-between items-center">
                       <span className={`font-mono text-[10px] font-bold ${isToday ? 'text-primary' : 'text-on-surface-variant'}`}>
@@ -527,11 +526,10 @@ export default function DashboardView({
                 <button
                   type="button"
                   onClick={handleVoiceInput}
-                  className={`absolute right-3 bottom-3 p-2 rounded-lg border transition-all ${
-                    isListening
+                  className={`absolute right-3 bottom-3 p-2 rounded-lg border transition-all ${isListening
                       ? 'bg-error/20 border-error/40 text-error animate-pulse'
                       : 'bg-surface-container-low border-outline text-on-surface-variant hover:text-white hover:bg-surface-container-high'
-                  } cursor-pointer`}
+                    } cursor-pointer`}
                   title={isListening ? "Stop Narration" : "Narrate Task"}
                 >
                   {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
@@ -555,7 +553,7 @@ export default function DashboardView({
 
           {/* Grid: Risk Alerts & AI Strategist */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
+
             {/* Risk Alerts Panel */}
             <div className="glass-card rounded-2xl p-5 border-error/20 risk-glow-red flex flex-col justify-between">
               <div>
@@ -572,13 +570,12 @@ export default function DashboardView({
                       <div
                         key={alert.id}
                         onClick={() => toggleAlert(alert.id)}
-                        className={`p-3 rounded border transition-all duration-200 cursor-pointer flex justify-between items-center ${
-                          isChecked
+                        className={`p-3 rounded border transition-all duration-200 cursor-pointer flex justify-between items-center ${isChecked
                             ? 'bg-surface-container/30 border-outline/30 opacity-60'
                             : alert.level === 'high'
-                            ? 'bg-error-container/10 border-error/30 hover:bg-error-container/15'
-                            : 'bg-tertiary-container/10 border-tertiary/30 hover:bg-tertiary-container/15'
-                        }`}
+                              ? 'bg-error-container/10 border-error/30 hover:bg-error-container/15'
+                              : 'bg-tertiary-container/10 border-tertiary/30 hover:bg-tertiary-container/15'
+                          }`}
                       >
                         <div>
                           <p className={`font-sans text-xs font-semibold ${isChecked ? 'line-through text-on-surface-variant' : 'text-white'}`}>
@@ -629,11 +626,10 @@ export default function DashboardView({
               <button
                 disabled={appliedAIChanges}
                 onClick={handleApplyAIChanges}
-                className={`mt-4 font-mono text-[10px] flex items-center gap-1.5 pt-2 border-t border-outline/20 w-full transition-all bg-transparent border-none ${
-                  appliedAIChanges
+                className={`mt-4 font-mono text-[10px] flex items-center gap-1.5 pt-2 border-t border-outline/20 w-full transition-all bg-transparent border-none ${appliedAIChanges
                     ? 'text-secondary/50 cursor-not-allowed'
                     : 'text-primary hover:underline cursor-pointer'
-                }`}
+                  }`}
               >
                 <span>{appliedAIChanges ? 'Changes Applied' : 'Apply Schedule Changes'}</span>
                 {!appliedAIChanges && <ArrowRight className="w-3 h-3 text-primary" />}
@@ -673,19 +669,17 @@ export default function DashboardView({
                     setSessionTime(0);
                     setSessionActive(true);
                   }}
-                  className={`glass-card rounded-xl p-4 hover:bg-surface-container-high transition-all cursor-pointer group flex flex-col justify-between border ${
-                    activeSessionTaskId === task.id ? 'border-primary animate-pulse-subtle' : 'border-outline/30'
-                  }`}
+                  className={`glass-card rounded-xl p-4 hover:bg-surface-container-high transition-all cursor-pointer group flex flex-col justify-between border ${activeSessionTaskId === task.id ? 'border-primary animate-pulse-subtle' : 'border-outline/30'
+                    }`}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <span
-                      className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider ${
-                        isCritical
+                      className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider ${isCritical
                           ? 'bg-error-container/20 text-error border border-error/10'
                           : isNormal
-                          ? 'bg-primary-container/20 text-primary border border-primary/10'
-                          : 'bg-secondary-container/20 text-secondary border border-secondary/10'
-                      }`}
+                            ? 'bg-primary-container/20 text-primary border border-primary/10'
+                            : 'bg-secondary-container/20 text-secondary border border-secondary/10'
+                        }`}
                     >
                       {task.status.toUpperCase()}
                     </span>
@@ -694,9 +688,8 @@ export default function DashboardView({
                         DEADLINE
                       </span>
                       <span
-                        className={`font-mono text-xs font-bold tabular-nums ${
-                          isCritical ? 'text-error' : 'text-white'
-                        }`}
+                        className={`font-mono text-xs font-bold tabular-nums ${isCritical ? 'text-error' : 'text-white'
+                          }`}
                       >
                         {countdownStr}
                       </span>
@@ -705,7 +698,7 @@ export default function DashboardView({
                   <h4 className="font-sans font-bold text-xs text-white group-hover:text-primary transition-colors">
                     {task.title}
                   </h4>
-                  
+
                   {/* Task details containing postponement warning and reschedule/postpone action */}
                   <div className="flex justify-between items-center mt-3 pt-2 border-t border-outline/10">
                     <p className="font-mono text-[8px] text-on-surface-variant/70">

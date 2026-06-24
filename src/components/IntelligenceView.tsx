@@ -185,6 +185,7 @@ export default function IntelligenceView({
       if (isSupabaseConfigured()) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session && session.user) {
+          // 1. Create task in Supabase
           const dbTask = await createGoal(
             session.user.id,
             generatedPlan.goal,
@@ -195,6 +196,39 @@ export default function IntelligenceView({
             generatedPlan.subtasks
           );
           dbTaskId = dbTask.id;
+
+          // 2. Schedule Event via Google Calendar API if Google Auth token is active
+          if (session.provider_token) {
+            const startDateTime = new Date().toISOString();
+            const endDateTime = new Date(Date.now() + generatedPlan.estimated_hours * 3600 * 1000).toISOString();
+            
+            try {
+              const res = await fetch(
+                'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${session.provider_token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    summary: `🎯 DeadlineOS: ${generatedPlan.goal}`,
+                    description: `AI-Generated Subtask Checklist:\n${generatedPlan.subtasks.map((st, i) => `${i + 1}. [ ] ${st}`).join('\n')}`,
+                    start: { dateTime: startDateTime },
+                    end: { dateTime: endDateTime }
+                  })
+                }
+              );
+
+              if (!res.ok) {
+                console.error('Google Calendar event creation failed:', await res.text());
+              } else {
+                console.log('Successfully created Google Calendar event!');
+              }
+            } catch (googleErr) {
+              console.error('Failed to post event to Google Calendar API:', googleErr);
+            }
+          }
         }
       }
     } catch (err) {
