@@ -18,7 +18,6 @@ import { ScreenType } from '../types';
 interface SidebarProps {
   activeScreen: ScreenType;
   onScreenChange: (screen: ScreenType) => void;
-  onOpenCommandPalette: () => void;
   session?: any;
   onSignOut?: () => void;
 }
@@ -26,7 +25,6 @@ interface SidebarProps {
 export default function Sidebar({
   activeScreen,
   onScreenChange,
-  onOpenCommandPalette,
   session,
   onSignOut
 }: SidebarProps) {
@@ -35,7 +33,6 @@ export default function Sidebar({
     { id: 'intelligence' as ScreenType, label: 'Intelligence', icon: Brain },
     { id: 'architect' as ScreenType, label: 'Architect', icon: Calendar },
     { id: 'focus' as ScreenType, label: 'Focus', icon: Timer },
-    { id: 'riskCenter' as ScreenType, label: 'Risk Center', icon: TriangleAlert },
     { id: 'analytics' as ScreenType, label: 'Analytics', icon: TrendingUp },
     { id: 'habits' as ScreenType, label: 'Habits', icon: CheckCircle2 },
     { id: 'settings' as ScreenType, label: 'Settings', icon: Settings }
@@ -80,15 +77,6 @@ export default function Sidebar({
 
       {/* Sidebar Footer Utilities */}
       <div className="px-4 mt-auto pt-6 border-t border-outline/30 space-y-2">
-        {/* Panic Mode Red Active Button */}
-        <button
-          onClick={() => onScreenChange('panicMode')}
-          className="w-full py-3 px-4 rounded-lg bg-error-container text-error hover:brightness-110 active:scale-[0.98] transition-all duration-200 font-sans font-bold text-xs flex items-center justify-center gap-2 border border-error/20 cursor-pointer shadow-lg shadow-error-container/10"
-        >
-          <Zap className="w-4 h-4 text-error fill-error" />
-          <span>Panic Mode</span>
-        </button>
-
         {/* Home / Marketing view button */}
         <button
           onClick={() => onScreenChange('landing')}
@@ -96,20 +84,6 @@ export default function Sidebar({
         >
           <Home className="w-4 h-4 text-on-surface-variant" />
           <span>Exit to Website</span>
-        </button>
-
-        {/* Command Palette trigger */}
-        <button
-          onClick={onOpenCommandPalette}
-          className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-on-surface-variant hover:text-white hover:bg-surface-container-high/40 font-sans font-medium text-[12px] transition-colors cursor-pointer"
-        >
-          <div className="flex items-center gap-4">
-            <Keyboard className="w-4 h-4 text-on-surface-variant" />
-            <span>Command Palette</span>
-          </div>
-          <span className="font-mono text-[10px] text-on-surface-variant/50 border border-outline px-1 rounded">
-            ⌘K
-          </span>
         </button>
 
         {/* Profile Card */}

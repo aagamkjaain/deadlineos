@@ -9,11 +9,9 @@ export type ScreenType =
   | 'intelligence'
   | 'architect'
   | 'focus'
-  | 'riskCenter'
   | 'analytics'
   | 'habits'
-  | 'settings'
-  | 'panicMode';
+  | 'settings';
 
 export interface TaskType {
   id: string;

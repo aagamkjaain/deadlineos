@@ -220,3 +220,140 @@ export async function getVoicePlanningResponse(userSpeechInput: string): Promise
 
   return response.text || 'Understood, let us keep pushing toward the deadline.';
 }
+
+export interface ParsedVoiceCommand {
+  action: 'CREATE_TASK' | 'NAVIGATE' | 'INTELLIGENCE_PLAN' | 'GENERAL_CHAT';
+  taskDetails: {
+    title: string;
+    hours: number;
+    status: 'critical' | 'normal' | 'deferred';
+  } | null;
+  screen: 'dashboard' | 'intelligence' | 'architect' | 'focus' | 'analytics' | 'habits' | 'settings' | null;
+  planPrompt: string | null;
+  spokenResponse: string;
+}
+
+/**
+ * Transcribe raw base64 audio data using Gemini multimodal capabilities.
+ */
+export async function transcribeAudio(base64Data: string, mimeType: string): Promise<string> {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error('Gemini API Key is missing. Please set it in Settings.');
+  }
+
+  const response = await client.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: [
+      {
+        inlineData: {
+          mimeType,
+          data: base64Data
+        }
+      },
+      {
+        text: 'Transcribe this voice note precisely. Do not add any preamble, conversational filler, or commentary. Just return the text transcript.'
+      }
+    ]
+  });
+
+  return response.text?.trim() || '';
+}
+
+/**
+ * Convert text into speech using Gemini TTS responseModalities: ["AUDIO"].
+ */
+export async function generateSpeech(text: string): Promise<{ base64Data: string; mimeType: string }> {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error('Gemini API Key is missing. Please set it in Settings.');
+  }
+
+  const response = await client.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: text,
+    config: {
+      // @ts-ignore
+      responseModalities: ['AUDIO'],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: {
+            voiceName: 'Puck' // Available prebuilt voices: Puck, Charon, Kore, Fenrir, Aoede
+          }
+        }
+      }
+    }
+  });
+
+  const part = response.candidates?.[0]?.content?.parts?.[0];
+  if (part && 'inlineData' in part && part.inlineData?.data) {
+    return {
+      base64Data: part.inlineData.data,
+      mimeType: part.inlineData.mimeType || 'audio/wav'
+    };
+  }
+
+  throw new Error('Failed to generate voice response from Gemini TTS.');
+}
+
+/**
+ * Parse a user spoken command into structured actions.
+ */
+export async function parseVoiceCommand(commandText: string, currentTasks: any[]): Promise<ParsedVoiceCommand> {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error('Gemini API Key is missing. Please set it in Settings.');
+  }
+
+  const response = await client.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: `User command: "${commandText}"\nCurrent tasks in system: ${JSON.stringify(currentTasks.map(t => ({ id: t.id, title: t.title, status: t.status })))}`,
+    config: {
+      systemInstruction: `You are the voice control processor for DeadlineOS.
+Analyze the user's spoken command and determine the appropriate action.
+You must classify the command into one of the following actions:
+1. CREATE_TASK: User wants to add a new task, goal, or deadline. Look for titles and durations (e.g. "due in 5 hours", "estimated 3 hours"). Default duration is 3 hours. Status can be "critical" (if high priority or urgent), "deferred", or "normal".
+2. NAVIGATE: User wants to change screens. Map their request to a valid screen: "dashboard", "intelligence", "architect", "focus", "analytics", "habits", "settings".
+3. INTELLIGENCE_PLAN: User wants to generate a complete multi-step plan for a complex goal (e.g. "plan my compiler project"). Set planPrompt to the goal.
+4. GENERAL_CHAT: User is asking a question, greeting, or wants motivational advice (e.g. "what are my deadlines?", "tell me a joke", "how am I doing?").
+
+For all actions, generate a friendly, concise 'spokenResponse' (maximum 20 words) that the system will speak back to the user.
+Output ONLY a valid JSON object matching this schema:
+{
+  "action": "CREATE_TASK" | "NAVIGATE" | "INTELLIGENCE_PLAN" | "GENERAL_CHAT",
+  "taskDetails": { "title": "string", "hours": number, "status": "critical" | "normal" | "deferred" } | null,
+  "screen": "dashboard" | "intelligence" | "architect" | "focus" | "analytics" | "habits" | "settings" | null,
+  "planPrompt": "string" | null,
+  "spokenResponse": "string"
+}`,
+      responseMimeType: 'application/json'
+    }
+  });
+
+  const parsed = JSON.parse(response.text || '{}');
+  return {
+    action: parsed.action || 'GENERAL_CHAT',
+    taskDetails: parsed.taskDetails || null,
+    screen: parsed.screen || null,
+    planPrompt: parsed.planPrompt || null,
+    spokenResponse: parsed.spokenResponse || 'Understood, processing completed.'
+  };
+}
+
+/**
+ * Utility to play base64-encoded audio in the browser.
+ */
+export function playAudio(base64Data: string, mimeType: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      const audioUrl = `data:${mimeType};base64,${base64Data}`;
+      const audio = new Audio(audioUrl);
+      audio.onended = () => resolve();
+      audio.onerror = (e) => reject(e);
+      audio.play().catch(reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+

@@ -19,22 +19,22 @@ import {
   Layers,
   ChevronDown,
   LogIn,
-  Settings
+  Settings,
+  Mic
 } from 'lucide-react';
 import { ScreenType, TaskType } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import IntelligenceView from './components/IntelligenceView';
-import PanicModeView from './components/PanicModeView';
 import LandingView from './components/LandingView';
-import CommandPalette from './components/CommandPalette';
+import VoiceCommandPanel from './components/VoiceCommandPanel';
 import { getApiKey, saveApiKey } from './services/gemini';
 import { supabase, isSupabaseConfigured } from './services/supabase';
 
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenType>('landing');
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [voiceCommandPanelOpen, setVoiceCommandPanelOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
 
   // Global Session States (Lifted)
@@ -53,17 +53,57 @@ export default function App() {
   const [newTaskStatus, setNewTaskStatus] = useState<'critical' | 'normal' | 'deferred'>('normal');
   const [newTaskHours, setNewTaskHours] = useState(3);
 
-  // Global keydown listeners for Cmd+K command palette trigger
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setCommandPaletteOpen((prev) => !prev);
+  // Voice Assistant command executor handlers
+  const handleVoiceCreateTask = async (title: string, hours: number, status: 'critical' | 'normal' | 'deferred') => {
+    let dbTaskId = `t_${Date.now()}`;
+    const defaultSubtasks = [
+      'Initial design and outline requirements',
+      'Core feature development and implementation',
+      'Final verification and testing loop'
+    ];
+
+    if (session && session.user && isSupabaseConfigured()) {
+      try {
+        const { createGoal } = await import('./services/supabase');
+        const dbTask = await createGoal(
+          session.user.id,
+          title,
+          'Voice Assistant Plan',
+          hours,
+          5, // difficulty
+          status === 'critical' ? 8 : status === 'normal' ? 6 : 4, // impact
+          defaultSubtasks
+        );
+        dbTaskId = dbTask.id;
+      } catch (err) {
+        console.error('Failed to create task in Supabase:', err);
       }
+    }
+
+    const newTask: TaskType = {
+      id: dbTaskId,
+      title,
+      project: 'Voice Assistant Plan',
+      status,
+      countdownSeconds: hours * 3600,
+      difficulty: 5,
+      impact: status === 'critical' ? 8 : status === 'normal' ? 6 : 4,
+      postponedCount: 0,
+      subtasks: defaultSubtasks.map(text => ({ text, completed: false })),
+      createdAt: new Date().toISOString()
     };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+
+    setTasks(prev => [newTask, ...prev]);
+  };
+
+  const handleVoiceNavigate = (screen: any) => {
+    setActiveScreen(screen);
+  };
+
+  const handleVoicePlanGoal = (goal: string) => {
+    setInitialPrompt(goal);
+    setActiveScreen('intelligence');
+  };
 
   // Priority score calculation formula (Feature 2)
   const calculatePriorityScore = (task: Partial<TaskType>) => {
@@ -348,50 +388,7 @@ export default function App() {
     );
   };
 
-  const renderRiskCenterView = () => (
-    <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
-      <div>
-        <h2 className="text-white text-3xl font-bold tracking-tight flex items-center gap-2">
-          <TriangleAlert className="text-error w-8 h-8 animate-pulse" />
-          <span>Risk Mitigation Center</span>
-        </h2>
-        <p className="text-on-surface-variant text-sm mt-1">
-          Monitor package health risks, overdue milestones, and critical deployment pipelines.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-        <div className="md:col-span-8 glass-card p-6 rounded-2xl border border-outline/30 space-y-6">
-          <h3 className="font-sans font-bold text-base text-white">Vulnerability &amp; Overdue Logs</h3>
-          <div className="space-y-3">
-            {[
-              { id: '1', title: 'Postgres Database schema audit loop', details: 'Overdue by 3h • Escalation status: High risk', severity: 'High' },
-              { id: '2', title: 'Docker container port bindings unsecured', details: 'Exposing port 3001 externally', severity: 'Medium' }
-            ].map((log) => (
-              <div key={log.id} className="p-4 rounded-xl border border-outline/40 bg-surface-container/20 flex justify-between items-center">
-                <div>
-                  <h4 className="font-sans font-bold text-xs text-white">{log.title}</h4>
-                  <p className="text-[10px] text-on-surface-variant mt-0.5">{log.details}</p>
-                </div>
-                <span className={`font-mono text-[9px] font-bold px-2.5 py-0.5 rounded ${log.severity === 'High' ? 'bg-error/15 text-error' : 'bg-tertiary/15 text-tertiary'}`}>{log.severity}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="md:col-span-4 glass-card p-6 rounded-2xl border border-outline/30 flex flex-col justify-between">
-          <div>
-            <Cpu className="text-primary w-6 h-6 mb-4" />
-            <h3 className="font-sans font-bold text-sm text-white mb-2">Automated Audit</h3>
-            <p className="text-xs text-on-surface-variant leading-relaxed">
-              Execute dynamic automated vulnerability scans across your local development directories and active network connections.
-            </p>
-          </div>
-          <button className="mt-8 py-3 bg-error text-on-error font-bold text-xs rounded-lg hover:brightness-110 active:scale-95 transition-all">
-            Execute Full Audit
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  // Risk Mitigation Center is removed
 
   const renderAnalyticsView = () => (
     <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
@@ -685,12 +682,8 @@ export default function App() {
         return (
           <DashboardView
             onNavigate={(scr) => {
-              if (scr === 'panicMode') {
-                setActiveScreen('panicMode');
-              } else if (scr === 'intelligence') {
+              if (scr === 'intelligence') {
                 setActiveScreen('intelligence');
-              } else if (scr === 'riskCenter') {
-                setActiveScreen('riskCenter');
               }
             }}
             tasks={sortedTasks}
@@ -722,8 +715,6 @@ export default function App() {
         return renderArchitectView();
       case 'focus':
         return renderFocusView();
-      case 'riskCenter':
-        return renderRiskCenterView();
       case 'analytics':
         return renderAnalyticsView();
       case 'habits':
@@ -740,19 +731,6 @@ export default function App() {
     return <LandingView session={session} onEnterApp={() => setActiveScreen('dashboard')} />;
   }
 
-  // If active screen is Panic Mode, render complete distraction-free full page
-  if (activeScreen === 'panicMode') {
-    return (
-      <div className="bg-[#0A0A0A] min-h-screen text-white relative z-0">
-        <PanicModeView
-          onAbort={() => setActiveScreen('dashboard')}
-          tasks={tasks}
-          setTasks={setTasks}
-        />
-      </div>
-    );
-  }
-
   // Otherwise, standard App Shell
   return (
     <div className="bg-[#0A0A0A] min-h-screen text-on-surface font-sans relative">
@@ -760,7 +738,6 @@ export default function App() {
       <Sidebar
         activeScreen={activeScreen}
         onScreenChange={(screen) => setActiveScreen(screen)}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         session={session}
         onSignOut={async () => {
           await supabase.auth.signOut();
@@ -779,7 +756,7 @@ export default function App() {
               ? 'Type a command or plan a goal...'
               : 'Search tasks, intelligence, or files...'
           }
-          onSearchFocus={() => setCommandPaletteOpen(true)}
+          onSearchFocus={() => setVoiceCommandPanelOpen(true)}
         />
 
         {/* Dynamic Canvas Container */}
@@ -788,23 +765,26 @@ export default function App() {
         </main>
       </div>
 
-      {/* Floating Action Quick-Add Button */}
-      {activeScreen !== 'landing' && activeScreen !== 'panicMode' && (
+      {/* Floating Action Voice Command Button */}
+      {activeScreen !== 'landing' && (
         <button
-          onClick={() => setCreateTaskOpen(true)}
+          onClick={() => setVoiceCommandPanelOpen(true)}
           className="fixed bottom-10 right-10 w-14 h-14 bg-primary text-on-primary rounded-full shadow-2xl shadow-primary/30 flex items-center justify-center group active:scale-95 hover:scale-[1.03] transition-all z-40 cursor-pointer overflow-hidden"
-          title="Add new high-priority deadline"
+          title="Start AI Voice Assistant"
         >
           <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-          <Plus className="w-6 h-6 text-on-primary shrink-0" />
+          <Mic className="w-6 h-6 text-on-primary shrink-0 animate-pulse" />
         </button>
       )}
 
-      {/* Command Palette search modal */}
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        onSelectAction={handleSelectPaletteAction}
+      {/* Voice Command Panel */}
+      <VoiceCommandPanel
+        isOpen={voiceCommandPanelOpen}
+        onClose={() => setVoiceCommandPanelOpen(false)}
+        tasks={tasks}
+        onCreateTask={handleVoiceCreateTask}
+        onNavigate={handleVoiceNavigate}
+        onPlanGoal={handleVoicePlanGoal}
       />
 
       {/* Create Task Modal Dialog */}

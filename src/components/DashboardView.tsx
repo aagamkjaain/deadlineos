@@ -11,7 +11,7 @@ import { TaskType } from '../types';
 import { generateScopeReduction, getApiKey } from '../services/gemini';
 
 interface DashboardViewProps {
-  onNavigate: (screen: 'intelligence' | 'panicMode' | 'riskCenter') => void;
+  onNavigate: (screen: 'intelligence') => void;
   tasks: TaskType[];
   setTasks: React.Dispatch<React.SetStateAction<TaskType[]>>;
   activeSessionTaskId: string | null;
@@ -116,42 +116,70 @@ export default function DashboardView({
     });
   };
 
-  const handleVoiceInput = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Chrome or Edge.');
-      return;
-    }
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
 
+  const handleVoiceInput = async () => {
     if (isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       setIsListening(false);
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
 
-    recognition.onstart = () => {
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/ogg';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/mp4';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = '';
+      }
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          try {
+            const base64Data = (reader.result as string).split(',')[1];
+            const actualMimeType = recorder.mimeType.split(';')[0] || 'audio/webm';
+            
+            const { transcribeAudio } = await import('../services/gemini');
+            const transcription = await transcribeAudio(base64Data, actualMimeType);
+            if (transcription) {
+              setCalendarInput(transcription);
+            }
+          } catch (err: any) {
+            console.error('Transcription failed:', err);
+            alert('Failed to transcribe audio. Error: ' + err.message);
+          }
+        };
+
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
       setIsListening(true);
-    };
-
-    recognition.onerror = (e: any) => {
-      console.error(e);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = (event: any) => {
-      const speechToText = event.results[0][0].transcript;
-      setCalendarInput(speechToText);
-    };
-
-    recognition.start();
+    } catch (err) {
+      console.error('Microphone access failed:', err);
+      alert('Could not access microphone. Please check permissions.');
+    }
   };
 
   const handleProcessCommand = (e: React.FormEvent) => {
@@ -349,12 +377,9 @@ export default function DashboardView({
             {criticalTasksCount > 0 ? (
               <>
                 You have{' '}
-                <button
-                  onClick={() => onNavigate('panicMode')}
-                  className="text-error font-bold underline decoration-2 underline-offset-4 hover:text-error/80 transition-colors cursor-pointer bg-transparent border-none p-0 inline"
-                >
+                <span className="text-error font-bold">
                   {criticalTasksCount} high-priority {criticalTasksCount === 1 ? 'deadline' : 'deadlines'}
-                </button>{' '}
+                </span>{' '}
                 pending. DeadlineOS has prioritized your active work blocks dynamically.
               </>
             ) : (

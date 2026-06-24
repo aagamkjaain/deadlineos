@@ -64,72 +64,104 @@ export default function IntelligenceView({
     }
   }, [initialPrompt, setInitialPrompt]);
 
-  // Trigger speech recognition (Feature 6)
-  const handleVoiceInput = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
-      return;
-    }
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
 
+  // Trigger speech recognition via Gemini (Feature 6)
+  const handleVoiceInput = async () => {
     if (isListening) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
       setIsListening(false);
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
 
-    recognition.onstart = () => {
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/ogg';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'audio/mp4';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = '';
+      }
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        setVoiceFeedback('Transcribing your voice command...');
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          try {
+            const base64Data = (reader.result as string).split(',')[1];
+            const actualMimeType = recorder.mimeType.split(';')[0] || 'audio/webm';
+            
+            const { transcribeAudio } = await import('../services/gemini');
+            const speechToText = await transcribeAudio(base64Data, actualMimeType);
+            
+            if (!speechToText) {
+              setVoiceFeedback('No speech detected. Please try again.');
+              return;
+            }
+
+            setInputValue(speechToText);
+            setVoiceFeedback(`Processing: "${speechToText}"...`);
+            
+            // Run AI planning process
+            setIsGenerating(true);
+            setErrorMessage(null);
+            try {
+              const plan = await generateTaskPlan(speechToText);
+              setGeneratedPlan(plan);
+              
+              // Speak feedback back to user using Gemini TTS
+              const spokenResponse = await getVoicePlanningResponse(`Generate a spoken confirmation response for plan: ${plan.goal}`);
+              setVoiceFeedback(spokenResponse);
+              speakResponseText(spokenResponse);
+            } catch (err: any) {
+              setErrorMessage(err.message || 'Error occurred during voice task generation.');
+            } finally {
+              setIsGenerating(false);
+            }
+          } catch (err: any) {
+            console.error('Transcription failed:', err);
+            setVoiceFeedback('Transcription failed. Please try again.');
+          }
+        };
+
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250);
       setIsListening(true);
       setVoiceFeedback('Listening to your planning voice commands...');
-    };
-
-    recognition.onerror = (e: any) => {
-      console.error(e);
-      setIsListening(false);
-      setVoiceFeedback('Voice error. Please speak clearly.');
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.onresult = async (event: any) => {
-      const speechToText = event.results[0][0].transcript;
-      setInputValue(speechToText);
-      setVoiceFeedback(`Processing: "${speechToText}"...`);
-      
-      // Run AI planning process
-      setIsGenerating(true);
-      setErrorMessage(null);
-      try {
-        const plan = await generateTaskPlan(speechToText);
-        setGeneratedPlan(plan);
-        
-        // Speak feedback back to user using browser TTS
-        const spokenResponse = await getVoicePlanningResponse(`Generate a spoken confirmation response for plan: ${plan.goal}`);
-        setVoiceFeedback(spokenResponse);
-        speakResponseText(spokenResponse);
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Error occurred during voice task generation.');
-      } finally {
-        setIsGenerating(false);
-      }
-    };
-
-    recognition.start();
+    } catch (err) {
+      console.error('Microphone access failed:', err);
+      setVoiceFeedback('Voice error. Please check permissions.');
+    }
   };
 
-  const speakResponseText = (text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+  const speakResponseText = async (text: string) => {
+    try {
+      const { generateSpeech, playAudio } = await import('../services/gemini');
+      const audio = await generateSpeech(text);
+      await playAudio(audio.base64Data, audio.mimeType);
+    } catch (err) {
+      console.error('Gemini TTS playback failed:', err);
     }
   };
 
