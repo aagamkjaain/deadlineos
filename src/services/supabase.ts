@@ -6,7 +6,7 @@ const supabaseUrl =
   import.meta.env?.VITE_SUPABASE_URL ||
   // @ts-ignore
   import.meta.env?.SUPABASE_URL ||
-  (typeof localStorage !== 'undefined' ? localStorage.getItem('SUPABASE_URL') : null) ||
+  (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.getItem === 'function' ? localStorage.getItem('SUPABASE_URL') : null) ||
   '';
 
 const supabaseKey =
@@ -15,7 +15,7 @@ const supabaseKey =
   import.meta.env?.VITE_SUPABASE_KEY ||
   // @ts-ignore
   import.meta.env?.SUPABASE_KEY ||
-  (typeof localStorage !== 'undefined' ? localStorage.getItem('SUPABASE_KEY') : null) ||
+  (typeof localStorage !== 'undefined' && localStorage && typeof localStorage.getItem === 'function' ? localStorage.getItem('SUPABASE_KEY') : null) ||
   '';
 
 export const supabase = createClient(

@@ -537,6 +537,196 @@ Output ONLY the exact intent string.`,
     return "GENERAL_CHAT";
   }
 }
+async function executeUserIntent(userId, messageText) {
+  const intent = await classifyIntent(messageText);
+  await updateWhatsAppSession(userId);
+  switch (intent) {
+    case "HELP": {
+      const helpMessage = `\u{1F916} *DeadlineOS Commands Guide*
+      
+\u2022 *today* / *plan* - Get your daily briefing & active focus blocks
+\u2022 *done [task name/number]* - Complete a subtask
+\u2022 *risk* - Audit project schedule risks & warnings
+\u2022 *panic* - Trigger emergency panic Mode triage
+\u2022 *reschedule* - Optimize calendar schedules
+\u2022 Or type naturally to plan a new goal (e.g. "Plan AWS exam due July 15")`;
+      await saveMessageLog(userId, "outbound", helpMessage);
+      return helpMessage;
+    }
+    case "CREATE_GOAL": {
+      const apiKey = getApiKey();
+      if (!apiKey) return "Configure your API key to generate plans.";
+      const ai = new GoogleGenAI2({ apiKey });
+      const extraction = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: `Parse this instruction: "${messageText}". Current Year: ${(/* @__PURE__ */ new Date()).getFullYear()}`,
+        config: {
+          systemInstruction: 'Extract the core Goal text and the target Deadline Date. Output ONLY valid JSON matching: { "goal": "string", "deadline": "YYYY-MM-DD or null if missing" }',
+          responseMimeType: "application/json"
+        }
+      });
+      const parsed = JSON.parse(extraction.text || "{}");
+      if (!parsed.goal) {
+        return "What is the goal name? Please speak or type clearly.";
+      }
+      if (!parsed.deadline || parsed.deadline === "null") {
+        return '\u{1F4C5} When is this due? Please specify a deadline date (e.g. "Friday" or "July 10").';
+      }
+      const targetDate = new Date(parsed.deadline);
+      const now = /* @__PURE__ */ new Date();
+      const diffMs = targetDate.getTime() - now.getTime();
+      const diffHours = Math.max(1, Math.round(diffMs / (3600 * 1e3)));
+      if (diffHours < 0) {
+        return "\u26A0\uFE0F Invalid date. The deadline date must be in the future.";
+      }
+      const plan = await generateTaskPlan(parsed.goal);
+      const dbTask = await createGoal(
+        userId,
+        plan.goal,
+        "WhatsApp Plan",
+        plan.estimated_hours,
+        plan.difficulty,
+        plan.impact,
+        plan.subtasks
+      );
+      const reply = `\u{1F3AF} *Goal Created Successfully*
+      
+\u2022 *Goal:* ${dbTask.title}
+\u2022 *Deadline:* ${parsed.deadline}
+\u2022 *Effort Est:* ${plan.estimated_hours} Hours
+\u2022 *Tasks Generated:* ${dbTask.subtasks.length}
+      
+*Next Focus Task:*
+1. ${dbTask.subtasks[0]?.text || "Get started"}`;
+      await saveMessageLog(userId, "outbound", reply);
+      return reply;
+    }
+    case "GET_TODAY_PLAN": {
+      const tasks = await getTasksByUserId(userId);
+      const activeTasks = tasks.filter((t) => t.progress < 100);
+      if (activeTasks.length === 0) {
+        const reply = '\u{1F305} No active focus tasks found for today. Type "Plan my DBMS project due Friday" to create one.';
+        await saveMessageLog(userId, "outbound", reply);
+        return reply;
+      }
+      let planReply = `\u{1F4C5} *Today's Focus Priorities*
+`;
+      activeTasks.forEach((t, i) => {
+        const openSubtask = t.subtasks.find((st) => !st.completed);
+        planReply += `
+*${i + 1}. ${t.title}* (${t.progress}% complete)
+\u2022 Focus task: ${openSubtask ? openSubtask.text : "Final testing"}
+\u2022 Time left: ${Math.ceil(t.countdown_seconds / 3600)} hours`;
+      });
+      await saveMessageLog(userId, "outbound", planReply);
+      return planReply;
+    }
+    case "COMPLETE_TASK": {
+      const tasks = await getTasksByUserId(userId);
+      const activeTasks = tasks.filter((t) => t.progress < 100);
+      if (activeTasks.length === 0) {
+        return "No active tasks found to complete.";
+      }
+      const targetTask = activeTasks[0];
+      const subtaskIndex = targetTask.subtasks.findIndex((st) => !st.completed);
+      if (subtaskIndex === -1) {
+        return "All subtasks for this task are already completed.";
+      }
+      const updated = await updateSubtaskStatus(targetTask.id, subtaskIndex, true);
+      const completedCount = updated.subtasks.filter((st) => st.completed).length;
+      const progress = updated.progress;
+      const missedSessionFactor = updated.postponed_count * 20;
+      const timeFactor = updated.countdown_seconds / 3600;
+      const riskScore = Math.max(0, Math.min(100, Math.round(100 - progress + missedSessionFactor - timeFactor)));
+      const riskLevel = riskScore > 75 ? "high" : riskScore > 40 ? "medium" : "low";
+      await saveRiskRecord(
+        userId,
+        riskScore,
+        riskLevel,
+        `Progress update to ${progress}% with ${updated.postponed_count} postponed checks.`
+      );
+      const reply = `\u2705 *Task Updated*
+      
+\u2022 Task: "${updated.subtasks[subtaskIndex].text}" marked complete.
+\u2022 Project Progress: *${progress}%*
+\u2022 System Risk Level: *${riskLevel.toUpperCase()}*`;
+      await saveMessageLog(userId, "outbound", reply);
+      return reply;
+    }
+    case "RISK_CHECK": {
+      const tasks = await getTasksByUserId(userId);
+      const activeTasks = tasks.filter((t) => t.progress < 100);
+      if (activeTasks.length === 0) {
+        return "No active projects to calculate risks for.";
+      }
+      const latestRisk = await getLatestRisk(userId);
+      const currentRiskLevel = latestRisk ? latestRisk.risk_level.toUpperCase() : "LOW";
+      const currentReason = latestRisk ? latestRisk.reason : "All schedules are on time.";
+      let reply = `\u26A0\uFE0F *DeadlineOS Schedule Audit*
+      
+\u2022 General System Risk: *${currentRiskLevel}*
+\u2022 Details: ${currentReason}
+      
+*Active Deadlines:*`;
+      activeTasks.forEach((t) => {
+        const hoursLeft = Math.ceil(t.countdown_seconds / 3600);
+        reply += `
+\u2022 "${t.title}" -> ${hoursLeft}h remaining (${t.progress}% complete)`;
+      });
+      await saveMessageLog(userId, "outbound", reply);
+      return reply;
+    }
+    case "PANIC_MODE": {
+      const tasks = await getTasksByUserId(userId);
+      const criticalTask = tasks.find((t) => t.status === "critical") || tasks[0];
+      if (!criticalTask) {
+        return "No active tasks found to rescue.";
+      }
+      const subtaskStrings = criticalTask.subtasks.map((st) => st.text);
+      const hoursLeft = Math.ceil(criticalTask.countdown_seconds / 3600);
+      const triage = await generatePanicTriage(criticalTask.title, subtaskStrings, hoursLeft);
+      const triagedSubtasks = [
+        ...triage.must_do.map((text) => ({ text, completed: false })),
+        ...triage.skip.map((text) => ({ text, completed: true }))
+        // Mark Nice-to-haves as auto-skipped/completed
+      ];
+      await updateTaskSubtasks(criticalTask.id, triagedSubtasks);
+      const reply = `\u{1F6A8} *Emergency Panic Protocol Active*
+      
+*Survival Strategy:* "${triage.justification}"
+      
+*MUST DO CHECKLIST:*
+${triage.must_do.map((t, i) => `${i + 1}. [ ] ${t}`).join("\n")}
+      
+*DEFERRED / SKIPPED:*
+${triage.skip.map((t) => `\u2717 ${t}`).join("\n")}`;
+      await saveMessageLog(userId, "outbound", reply);
+      return reply;
+    }
+    case "RESCHEDULE": {
+      const tasks = await getTasksByUserId(userId);
+      const criticalTask = tasks.find((t) => t.status === "critical") || tasks[0];
+      if (!criticalTask) {
+        return "No active task found to reschedule.";
+      }
+      const updated = await postponeTask(criticalTask.id);
+      const hoursLeft = Math.ceil(updated.countdown_seconds / 3600);
+      const reply = `\u23F0 *Task Rescheduled*
+      
+\u2022 Task: "${updated.title}" shifted.
+\u2022 New Deadline countdown: *${hoursLeft} Hours* remaining.
+\u2022 Postponed count: *${updated.postponed_count}* times.`;
+      await saveMessageLog(userId, "outbound", reply);
+      return reply;
+    }
+    case "GENERAL_CHAT":
+    default: {
+      const responseText = await getVoicePlanningResponse(messageText);
+      await saveMessageLog(userId, "outbound", responseText);
+      return responseText;
+    }
+  }
+}
 app.post("/api/whatsapp/webhook", async (req, res) => {
   const body = req.body;
   const fromPhone = body.From || "";
@@ -575,195 +765,8 @@ app.post("/api/whatsapp/webhook", async (req, res) => {
     } else {
       await saveMessageLog(user.id, "inbound", messageText);
     }
-    const intent = await classifyIntent(messageText);
-    await updateWhatsAppSession(user.id);
-    switch (intent) {
-      case "HELP": {
-        const helpMessage = `\u{1F916} *DeadlineOS Commands Guide*
-        
-\u2022 *today* / *plan* - Get your daily briefing & active focus blocks
-\u2022 *done [task name/number]* - Complete a subtask
-\u2022 *risk* - Audit project schedule risks & warnings
-\u2022 *panic* - Trigger emergency panic Mode triage
-\u2022 *reschedule* - Optimize calendar schedules
-\u2022 Or type naturally to plan a new goal (e.g. "Plan AWS exam due July 15")`;
-        await saveMessageLog(user.id, "outbound", helpMessage);
-        return sendTwilioReply(res, helpMessage);
-      }
-      case "CREATE_GOAL": {
-        const apiKey = getApiKey();
-        if (!apiKey) return sendTwilioReply(res, "Configure your API key to generate plans.");
-        const ai = new GoogleGenAI2({ apiKey });
-        const extraction = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: `Parse this instruction: "${messageText}". Current Year: ${(/* @__PURE__ */ new Date()).getFullYear()}`,
-          config: {
-            systemInstruction: 'Extract the core Goal text and the target Deadline Date. Output ONLY valid JSON matching: { "goal": "string", "deadline": "YYYY-MM-DD or null if missing" }',
-            responseMimeType: "application/json"
-          }
-        });
-        const parsed = JSON.parse(extraction.text || "{}");
-        if (!parsed.goal) {
-          return sendTwilioReply(res, "What is the goal name? Please speak or type clearly.");
-        }
-        if (!parsed.deadline || parsed.deadline === "null") {
-          return sendTwilioReply(res, '\u{1F4C5} When is this due? Please specify a deadline date (e.g. "Friday" or "July 10").');
-        }
-        const targetDate = new Date(parsed.deadline);
-        const now = /* @__PURE__ */ new Date();
-        const diffMs = targetDate.getTime() - now.getTime();
-        const diffHours = Math.max(1, Math.round(diffMs / (3600 * 1e3)));
-        if (diffHours < 0) {
-          return sendTwilioReply(res, "\u26A0\uFE0F Invalid date. The deadline date must be in the future.");
-        }
-        const plan = await generateTaskPlan(parsed.goal);
-        const dbTask = await createGoal(
-          user.id,
-          plan.goal,
-          "WhatsApp Plan",
-          plan.estimated_hours,
-          plan.difficulty,
-          plan.impact,
-          plan.subtasks
-        );
-        const reply = `\u{1F3AF} *Goal Created Successfully*
-        
-\u2022 *Goal:* ${dbTask.title}
-\u2022 *Deadline:* ${parsed.deadline}
-\u2022 *Effort Est:* ${plan.estimated_hours} Hours
-\u2022 *Tasks Generated:* ${dbTask.subtasks.length}
-        
-*Next Focus Task:*
-1. ${dbTask.subtasks[0]?.text || "Get started"}`;
-        await saveMessageLog(user.id, "outbound", reply);
-        return sendTwilioReply(res, reply);
-      }
-      case "GET_TODAY_PLAN": {
-        const tasks = await getTasksByUserId(user.id);
-        const activeTasks = tasks.filter((t) => t.progress < 100);
-        if (activeTasks.length === 0) {
-          const reply = '\u{1F305} No active focus tasks found for today. Type "Plan my DBMS project due Friday" to create one.';
-          await saveMessageLog(user.id, "outbound", reply);
-          return sendTwilioReply(res, reply);
-        }
-        let planReply = `\u{1F4C5} *Today's Focus Priorities*
-`;
-        activeTasks.forEach((t, i) => {
-          const openSubtask = t.subtasks.find((st) => !st.completed);
-          planReply += `
-*${i + 1}. ${t.title}* (${t.progress}% complete)
-\u2022 Focus task: ${openSubtask ? openSubtask.text : "Final testing"}
-\u2022 Time left: ${Math.ceil(t.countdown_seconds / 3600)} hours`;
-        });
-        await saveMessageLog(user.id, "outbound", planReply);
-        return sendTwilioReply(res, planReply);
-      }
-      case "COMPLETE_TASK": {
-        const tasks = await getTasksByUserId(user.id);
-        const activeTasks = tasks.filter((t) => t.progress < 100);
-        if (activeTasks.length === 0) {
-          return sendTwilioReply(res, "No active tasks found to complete.");
-        }
-        const targetTask = activeTasks[0];
-        const subtaskIndex = targetTask.subtasks.findIndex((st) => !st.completed);
-        if (subtaskIndex === -1) {
-          return sendTwilioReply(res, "All subtasks for this task are already completed.");
-        }
-        const updated = await updateSubtaskStatus(targetTask.id, subtaskIndex, true);
-        const completedCount = updated.subtasks.filter((st) => st.completed).length;
-        const totalCount = updated.subtasks.length;
-        const progress = updated.progress;
-        const missedSessionFactor = updated.postponed_count * 20;
-        const timeFactor = updated.countdown_seconds / 3600;
-        const riskScore = Math.max(0, Math.min(100, Math.round(100 - progress + missedSessionFactor - timeFactor)));
-        const riskLevel = riskScore > 75 ? "high" : riskScore > 40 ? "medium" : "low";
-        await saveRiskRecord(
-          user.id,
-          riskScore,
-          riskLevel,
-          `Progress update to ${progress}% with ${updated.postponed_count} postponed checks.`
-        );
-        const reply = `\u2705 *Task Updated*
-        
-\u2022 Task: "${updated.subtasks[subtaskIndex].text}" marked complete.
-\u2022 Project Progress: *${progress}%*
-\u2022 System Risk Level: *${riskLevel.toUpperCase()}*`;
-        await saveMessageLog(user.id, "outbound", reply);
-        return sendTwilioReply(res, reply);
-      }
-      case "RISK_CHECK": {
-        const tasks = await getTasksByUserId(user.id);
-        const activeTasks = tasks.filter((t) => t.progress < 100);
-        if (activeTasks.length === 0) {
-          return sendTwilioReply(res, "No active projects to calculate risks for.");
-        }
-        const latestRisk = await getLatestRisk(user.id);
-        const currentRiskLevel = latestRisk ? latestRisk.risk_level.toUpperCase() : "LOW";
-        const currentReason = latestRisk ? latestRisk.reason : "All schedules are on time.";
-        let reply = `\u26A0\uFE0F *DeadlineOS Schedule Audit*
-        
-\u2022 General System Risk: *${currentRiskLevel}*
-\u2022 Details: ${currentReason}
-        
-*Active Deadlines:*`;
-        activeTasks.forEach((t) => {
-          const hoursLeft = Math.ceil(t.countdown_seconds / 3600);
-          reply += `
-\u2022 "${t.title}" -> ${hoursLeft}h remaining (${t.progress}% complete)`;
-        });
-        await saveMessageLog(user.id, "outbound", reply);
-        return sendTwilioReply(res, reply);
-      }
-      case "PANIC_MODE": {
-        const tasks = await getTasksByUserId(user.id);
-        const criticalTask = tasks.find((t) => t.status === "critical") || tasks[0];
-        if (!criticalTask) {
-          return sendTwilioReply(res, "No active tasks found to rescue.");
-        }
-        const subtaskStrings = criticalTask.subtasks.map((st) => st.text);
-        const hoursLeft = Math.ceil(criticalTask.countdown_seconds / 3600);
-        const triage = await generatePanicTriage(criticalTask.title, subtaskStrings, hoursLeft);
-        const triagedSubtasks = [
-          ...triage.must_do.map((text) => ({ text, completed: false })),
-          ...triage.skip.map((text) => ({ text, completed: true }))
-          // Mark Nice-to-haves as auto-skipped/completed
-        ];
-        await updateTaskSubtasks(criticalTask.id, triagedSubtasks);
-        const reply = `\u{1F6A8} *Emergency Panic Protocol Active*
-        
-*Survival Strategy:* "${triage.justification}"
-        
-*MUST DO CHECKLIST:*
-${triage.must_do.map((t, i) => `${i + 1}. [ ] ${t}`).join("\n")}
-        
-*DEFERRED / SKIPPED:*
-${triage.skip.map((t) => `\u2717 ${t}`).join("\n")}`;
-        await saveMessageLog(user.id, "outbound", reply);
-        return sendTwilioReply(res, reply);
-      }
-      case "RESCHEDULE": {
-        const tasks = await getTasksByUserId(user.id);
-        const criticalTask = tasks.find((t) => t.status === "critical") || tasks[0];
-        if (!criticalTask) {
-          return sendTwilioReply(res, "No active task found to reschedule.");
-        }
-        const updated = await postponeTask(criticalTask.id);
-        const hoursLeft = Math.ceil(updated.countdown_seconds / 3600);
-        const reply = `\u23F0 *Task Rescheduled*
-        
-\u2022 Task: "${updated.title}" shifted.
-\u2022 New Deadline countdown: *${hoursLeft} Hours* remaining.
-\u2022 Postponed count: *${updated.postponed_count}* times.`;
-        await saveMessageLog(user.id, "outbound", reply);
-        return sendTwilioReply(res, reply);
-      }
-      case "GENERAL_CHAT":
-      default: {
-        const responseText = await getVoicePlanningResponse(messageText);
-        await saveMessageLog(user.id, "outbound", responseText);
-        return sendTwilioReply(res, responseText);
-      }
-    }
+    const reply = await executeUserIntent(user.id, messageText);
+    return sendTwilioReply(res, reply);
   } catch (error) {
     console.error(error);
     return sendTwilioReply(
@@ -778,6 +781,325 @@ if (process.env.NODE_ENV === "production") {
     res.sendFile(path.join(__dirname, "dist", "index.html"));
   });
 }
+var telegramOffset = 0;
+async function sendTelegramMessage(botUrl, chatId, text, options = {}) {
+  try {
+    await axios.post(`${botUrl}/sendMessage`, {
+      chat_id: chatId,
+      text,
+      parse_mode: "Markdown",
+      ...options
+    });
+  } catch (err) {
+    console.error("Failed to send Telegram message:", err.response?.data || err.message);
+  }
+}
+async function editTelegramMessage(botUrl, chatId, messageId, text, options = {}) {
+  try {
+    await axios.post(`${botUrl}/editMessageText`, {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+      parse_mode: "Markdown",
+      ...options
+    });
+  } catch (err) {
+    console.error("Failed to edit Telegram message:", err.response?.data || err.message);
+  }
+}
+async function getGoogleToken(userId) {
+  try {
+    const { data, error } = await supabase.from("tasks").select("*").eq("user_id", userId).eq("title", "__SYSTEM_CONFIG__").eq("project", "OAuth").limit(1);
+    if (error || !data || data.length === 0) return null;
+    const subtasks = data[0].subtasks;
+    if (subtasks && subtasks.length > 0) {
+      const match = subtasks[0].text.match(/^provider_token:(.+)$/);
+      return match ? match[1] : null;
+    }
+  } catch (err) {
+    console.error("Error fetching Google token from DB config:", err);
+  }
+  return null;
+}
+function parsePlanFromText(text) {
+  const lines = text.split("\n");
+  let goal = "";
+  let subtasks = [];
+  let hours = 3;
+  let difficulty = 5;
+  let impact = 5;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.includes("Goal:")) {
+      goal = line.split("Goal:")[1].replace(/\*/g, "").trim();
+    }
+    if (line.includes("Effort Est:")) {
+      hours = parseInt(line.split("Effort Est:")[1].replace(/Hours|Hours/gi, "").trim()) || 3;
+    }
+    if (line.includes("Difficulty:")) {
+      difficulty = parseInt(line.split("Difficulty:")[1].split("/")[0].trim()) || 5;
+    }
+    if (line.includes("Impact:")) {
+      impact = parseInt(line.split("Impact:")[1].split("/")[0].trim()) || 5;
+    }
+    if (/^\d+\.\s+/.test(line)) {
+      subtasks.push(line.replace(/^\d+\.\s+/, "").trim());
+    }
+  }
+  return { goal, subtasks, hours, difficulty, impact };
+}
+async function handleTelegramMessage(botUrl, message) {
+  const chatId = String(message.chat.id);
+  const text = message.text || "";
+  const trimmedText = text.trim();
+  if (trimmedText.startsWith("/start")) {
+    const parts = trimmedText.split(/\s+/);
+    if (parts.length > 1) {
+      const potentialUserId = parts[1];
+      try {
+        const { data: updatedUser, error } = await supabase.from("users").update({ phone_number: `telegram:${chatId}`, channel: "telegram" }).eq("id", potentialUserId).select().single();
+        if (error || !updatedUser) {
+          console.error("Failed to link Telegram chat ID to user:", error);
+          await sendTelegramMessage(
+            botUrl,
+            chatId,
+            `\u26A0\uFE0F *Failed to link account:* We could not find a user profile matching this ID. Please try connecting again from the dashboard settings.`
+          );
+        } else {
+          await sendTelegramMessage(
+            botUrl,
+            chatId,
+            `\u{1F389} *Account Connected Successfully!*
+
+Your Telegram account has been linked to your DeadlineOS account.
+
+You can now send me goals and deadlines (e.g. "Plan AWS exam due Friday") or run commands like *today*, *risk*, *panic*, and *reschedule* directly from here!`
+          );
+        }
+      } catch (err) {
+        console.error("Error linking Telegram profile:", err);
+        await sendTelegramMessage(
+          botUrl,
+          chatId,
+          `\u26A0\uFE0F *Connection Error:* An error occurred while linking your account.`
+        );
+      }
+      return;
+    }
+  }
+  if (trimmedText.startsWith("/start") || trimmedText.startsWith("/help")) {
+    await sendTelegramMessage(
+      botUrl,
+      chatId,
+      `\u{1F916} *Welcome to your DeadlineOS AI Assistant!*
+      
+Send me a goal or deadline (e.g. "I have a hackathon on 24th June"), and I will decompose it into a structured Action Plan, save it, and sync it to Google Calendar.
+
+*Available Commands:*
+\u2022 *today* / *plan* - Get your daily briefing & active focus blocks
+\u2022 *done [task name/number]* - Complete a subtask
+\u2022 *risk* - Audit project schedule risks & warnings
+\u2022 *panic* - Trigger emergency panic Mode triage
+\u2022 *reschedule* - Optimize calendar schedules
+
+To pair your account, click the link in your Web Settings dashboard.`
+    );
+    return;
+  }
+  let user = null;
+  const { data: matchedUsers } = await supabase.from("users").select("*").eq("phone_number", `telegram:${chatId}`);
+  if (matchedUsers && matchedUsers.length > 0) {
+    user = matchedUsers[0];
+  }
+  if (!user) {
+    await sendTelegramMessage(
+      botUrl,
+      chatId,
+      `\u{1F4F1} *Telegram Account Not Linked*
+
+Your Telegram chat is not connected to a DeadlineOS profile.
+
+Please log in to the web dashboard, go to Settings, and click *Connect Telegram Bot* to pair your account.`
+    );
+    return;
+  }
+  await saveMessageLog(user.id, "inbound", `[Telegram] ${text}`);
+  const intent = await classifyIntent(text);
+  if (intent === "CREATE_GOAL") {
+    await sendTelegramMessage(botUrl, chatId, "\u{1F914} Decomposing your goal into structured tasks...");
+    try {
+      const plan = await generateTaskPlan(text);
+      const responseText = `\u{1F4CB} *Plan of Action Decomposed:*
+     
+*Goal:* ${plan.goal}
+*Effort Est:* ${plan.estimated_hours} Hours
+*Difficulty:* ${plan.difficulty}/10
+*Impact:* ${plan.impact}/10
+
+*Tasks Checklist:*
+${plan.subtasks.map((st, idx) => `${idx + 1}. ${st}`).join("\n")}
+
+Confirm to save in database and schedule sequential Google Calendar events:`;
+      await sendTelegramMessage(botUrl, chatId, responseText, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "\u2705 Approve Plan", callback_data: "approve_plan" },
+              { text: "\u274C Reject Plan", callback_data: "reject_plan" }
+            ]
+          ]
+        }
+      });
+    } catch (err) {
+      console.error("Failed to generate task plan on Telegram message:", err);
+      await sendTelegramMessage(botUrl, chatId, `\u26A0\uFE0F Failed to generate action plan: ${err.message || err}`);
+    }
+  } else {
+    try {
+      const reply = await executeUserIntent(user.id, text);
+      await sendTelegramMessage(botUrl, chatId, reply);
+    } catch (err) {
+      console.error("Error executing intent via Telegram:", err);
+      await sendTelegramMessage(botUrl, chatId, `\u26A0\uFE0F An error occurred while executing command.`);
+    }
+  }
+}
+async function handleTelegramCallbackQuery(botUrl, callbackQuery) {
+  const chatId = String(callbackQuery.message.chat.id);
+  const data = callbackQuery.data;
+  const messageId = callbackQuery.message.message_id;
+  const messageText = callbackQuery.message.text || "";
+  try {
+    await axios.post(`${botUrl}/answerCallbackQuery`, {
+      callback_query_id: callbackQuery.id
+    });
+  } catch (err) {
+    console.error("Failed to answer Telegram callback query:", err);
+  }
+  let user = null;
+  const { data: matchedUsers } = await supabase.from("users").select("*").eq("phone_number", `telegram:${chatId}`);
+  if (matchedUsers && matchedUsers.length > 0) {
+    user = matchedUsers[0];
+  }
+  if (!user) {
+    await editTelegramMessage(botUrl, chatId, messageId, `\u26A0\uFE0F *Error:* No active user profile found for this Telegram account.`);
+    return;
+  }
+  if (data === "reject_plan") {
+    await editTelegramMessage(botUrl, chatId, messageId, `\u274C *Plan Rejected.* You can send another goal to try again.`);
+    return;
+  }
+  if (data === "approve_plan") {
+    await editTelegramMessage(botUrl, chatId, messageId, `\u2699\uFE0F *Processing plan approval and calendar scheduling...*`);
+    const parsed = parsePlanFromText(messageText);
+    if (!parsed.goal || parsed.subtasks.length === 0) {
+      await editTelegramMessage(botUrl, chatId, messageId, `\u26A0\uFE0F *Error:* Could not parse plan details from the message.`);
+      return;
+    }
+    const subtasksCount = parsed.subtasks.length;
+    const subtaskHours = Math.max(1, Math.round(parsed.hours / subtasksCount));
+    const subtaskCountdown = subtaskHours * 3600;
+    let calendarSynced = false;
+    const googleToken = await getGoogleToken(user.id);
+    for (let i = 0; i < subtasksCount; i++) {
+      const subtaskText = parsed.subtasks[i];
+      try {
+        await createGoal(
+          user.id,
+          subtaskText,
+          parsed.goal,
+          // Group subtasks under main goal project name
+          subtaskHours,
+          parsed.difficulty,
+          parsed.impact,
+          [],
+          subtaskCountdown
+        );
+      } catch (dbErr) {
+        console.error("Failed to save decomposed Telegram task to Supabase:", dbErr);
+      }
+      if (googleToken) {
+        const startDateTime = new Date(Date.now() + i * subtaskHours * 3600 * 1e3).toISOString();
+        const endDateTime = new Date(Date.now() + (i + 1) * subtaskHours * 3600 * 1e3).toISOString();
+        try {
+          const res = await axios.post(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            {
+              summary: `\u{1F3AF} ${parsed.goal}: ${subtaskText}`,
+              description: `Subtask of Goal: ${parsed.goal}
+Difficulty: ${parsed.difficulty}/10
+Impact: ${parsed.impact}/10`,
+              start: { dateTime: startDateTime },
+              end: { dateTime: endDateTime }
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${googleToken}`,
+                "Content-Type": "application/json"
+              }
+            }
+          );
+          if (res.status === 200 || res.status === 201) {
+            calendarSynced = true;
+          }
+        } catch (googleErr) {
+          console.error("Failed to post event to Google Calendar from Telegram Bot:", googleErr.response?.data || googleErr.message);
+        }
+      }
+    }
+    let finalReply = `\u2705 *Plan Approved!*
+    
+Decomposed tasks successfully created in database & task priority queue.`;
+    if (googleToken && calendarSynced) {
+      finalReply += `
+\u{1F4C5} *All tasks mapped sequentially on your Google Calendar!*`;
+    } else if (googleToken && !calendarSynced) {
+      finalReply += `
+\u26A0\uFE0F *Google Calendar event creation failed. Check credentials.*`;
+    } else {
+      finalReply += `
+\u2139\uFE0F *Google Calendar sync skipped (no active browser Google Oauth token saved in database config).*`;
+    }
+    await editTelegramMessage(botUrl, chatId, messageId, finalReply);
+    await saveMessageLog(user.id, "outbound", `[Telegram Plan Approved] ${parsed.goal}`);
+  }
+}
+async function initTelegramBot() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.log("Telegram Bot Token is not configured in .env. Skipping Telegram bot polling loop.");
+    return;
+  }
+  console.log("Starting Telegram bot polling loop...");
+  pollTelegramUpdates(token);
+}
+async function pollTelegramUpdates(token) {
+  const botUrl = `https://api.telegram.org/bot${token}`;
+  while (true) {
+    try {
+      const response = await axios.get(`${botUrl}/getUpdates`, {
+        params: {
+          offset: telegramOffset,
+          timeout: 30
+        },
+        timeout: 35e3
+      });
+      const updates = response.data?.result || [];
+      for (const update of updates) {
+        telegramOffset = update.update_id + 1;
+        if (update.message) {
+          await handleTelegramMessage(botUrl, update.message);
+        } else if (update.callback_query) {
+          await handleTelegramCallbackQuery(botUrl, update.callback_query);
+        }
+      }
+    } catch (error) {
+      console.error("Telegram bot polling error:", error.message || error);
+      await new Promise((resolve) => setTimeout(resolve, 5e3));
+    }
+  }
+}
 app.listen(PORT, () => {
   console.log(`Backend server listening on port ${PORT}`);
+  initTelegramBot();
 });

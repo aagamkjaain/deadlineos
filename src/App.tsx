@@ -430,6 +430,35 @@ export default function App() {
     }
   };
 
+  const syncGoogleTokenToDb = async (userId: string, providerToken: string | null) => {
+    if (!providerToken || !isSupabaseConfigured()) return;
+    try {
+      await supabase
+        .from('tasks')
+        .delete()
+        .eq('user_id', userId)
+        .eq('title', '__SYSTEM_CONFIG__')
+        .eq('project', 'OAuth');
+
+      await supabase
+        .from('tasks')
+        .insert({
+          user_id: userId,
+          title: '__SYSTEM_CONFIG__',
+          project: 'OAuth',
+          status: 'deferred',
+          countdown_seconds: 0,
+          difficulty: 1,
+          impact: 1,
+          progress: 100,
+          subtasks: [{ text: `provider_token:${providerToken}`, completed: true }]
+        });
+      console.log('Successfully synchronized Google OAuth token to database config.');
+    } catch (err) {
+      console.error('Failed to sync Google token to DB config:', err);
+    }
+  };
+
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
@@ -441,6 +470,9 @@ export default function App() {
         ensureUserProfileExists(session.user.id).then(() => {
           loadTasksFromSupabase(session.user.id);
           loadUserProfile(session.user.id);
+          if (session.provider_token) {
+            syncGoogleTokenToDb(session.user.id, session.provider_token);
+          }
         });
       } else {
         setActiveScreen('landing');
@@ -455,6 +487,9 @@ export default function App() {
         ensureUserProfileExists(session.user.id).then(() => {
           loadTasksFromSupabase(session.user.id);
           loadUserProfile(session.user.id);
+          if (session.provider_token) {
+            syncGoogleTokenToDb(session.user.id, session.provider_token);
+          }
         });
       } else {
         setActiveScreen('landing');
@@ -470,21 +505,24 @@ export default function App() {
     saveOllamaConfigs(aiProvider, ollamaUrlInput, ollamaModelInput);
     
     if (session && session.user && isSupabaseConfigured()) {
-      const normPhone = userPhoneInput.trim().replace('whatsapp:', '');
+      const isTelegram = userPhoneInput.startsWith('telegram:');
+      const normPhone = isTelegram ? userPhoneInput : userPhoneInput.trim().replace('whatsapp:', '');
+      const activeChannel = isTelegram ? 'telegram' : 'whatsapp';
+      
       try {
         const { error } = await supabase
           .from('users')
           .upsert({
             id: session.user.id,
             phone_number: normPhone || null,
-            channel: 'web'
+            channel: activeChannel
           });
         
         if (error) throw error;
-        alert('DeadlineOS configuration and WhatsApp connection saved successfully!');
+        alert('DeadlineOS configuration saved successfully!');
       } catch (err: any) {
-        console.error('Failed to link WhatsApp number to Supabase profile:', err);
-        alert('Failed to connect WhatsApp: ' + err.message);
+        console.error('Failed to save profile changes to Supabase:', err);
+        alert('Failed to save configuration: ' + err.message);
       }
     } else {
       localStorage.setItem('USER_PHONE_NUMBER', userPhoneInput);
@@ -492,8 +530,34 @@ export default function App() {
     }
   };
 
-  const renderSettingsView = () => (
-    <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
+  const handleDisconnectTelegram = async () => {
+    if (session && session.user && isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase
+          .from('users')
+          .upsert({
+            id: session.user.id,
+            phone_number: null,
+            channel: 'web'
+          });
+        
+        if (error) throw error;
+        setUserPhoneInput('');
+        alert('Telegram account successfully disconnected!');
+      } catch (err: any) {
+        console.error('Failed to disconnect Telegram:', err);
+        alert('Failed to disconnect Telegram: ' + err.message);
+      }
+    }
+  };
+
+
+  const renderSettingsView = () => {
+    const isTelegramConnected = userPhoneInput.startsWith('telegram:');
+    const telegramChatId = isTelegramConnected ? userPhoneInput.replace('telegram:', '') : '';
+
+    return (
+      <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
       <div>
         <h2 className="text-white text-3xl font-bold tracking-tight flex items-center gap-2">
           <Settings className="text-primary w-8 h-8" />
@@ -579,10 +643,56 @@ export default function App() {
           <input
             type="text"
             placeholder="e.g. +1234567890"
-            value={userPhoneInput}
+            value={isTelegramConnected ? '' : userPhoneInput}
             onChange={(e) => setUserPhoneInput(e.target.value)}
-            className="w-full max-w-md bg-surface-container border border-outline rounded-lg px-3 py-2 text-xs text-white placeholder:text-on-surface-variant/30 focus:ring-1 focus:ring-primary outline-none"
+            disabled={isTelegramConnected}
+            className="w-full max-w-md bg-surface-container border border-outline rounded-lg px-3 py-2 text-xs text-white placeholder:text-on-surface-variant/30 focus:ring-1 focus:ring-primary outline-none disabled:opacity-50"
           />
+          {isTelegramConnected && (
+            <p className="text-[10px] text-warning mt-0.5">WhatsApp integration is disabled because Telegram is connected. Disconnect Telegram below to use WhatsApp.</p>
+          )}
+        </div>
+
+        {/* User Telegram Configuration */}
+        <div className="flex flex-col gap-3 pb-4 border-b border-outline/20">
+          <div>
+            <h3 className="font-sans font-bold text-xs text-white">Telegram Integration Channel</h3>
+            <p className="text-[10px] text-on-surface-variant mt-0.5">
+              Link your Telegram account to plan deadlines, check today's tasks, audit risk schedules, and trigger panic mode commands directly.
+            </p>
+          </div>
+          {isTelegramConnected ? (
+            <div className="flex items-center justify-between bg-surface-container/50 border border-success/30 rounded-xl p-4 max-w-md">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <div>
+                  <div className="text-white text-xs font-bold">Connected to Telegram</div>
+                  <div className="text-[10px] text-on-surface-variant">Chat ID: {telegramChatId}</div>
+                </div>
+              </div>
+              <button
+                onClick={handleDisconnectTelegram}
+                className="bg-error/10 hover:bg-error/20 text-error text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer border border-error/30"
+              >
+                Disconnect
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <a
+                // @ts-ignore
+                href={`https://t.me/${import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'deadlineos_bot'}?start=${session?.user?.id || ''}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 w-full max-w-md bg-[#0088cc] hover:brightness-110 text-white text-xs px-4 py-2.5 rounded-lg font-bold transition-all cursor-pointer shadow-lg shadow-[#0088cc]/20"
+              >
+                <span>Connect Telegram Bot</span>
+              </a>
+              <p className="text-[9px] text-on-surface-variant/70">
+                Clicking the button will open Telegram. Start the bot to pair it with this dashboard session.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="pt-2 flex justify-end">
@@ -596,6 +706,7 @@ export default function App() {
       </div>
     </div>
   );
+};
 
   // Selector for the right view block
   const renderActiveScreenContent = () => {
