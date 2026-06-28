@@ -808,7 +808,7 @@ async function editTelegramMessage(botUrl, chatId, messageId, text, options = {}
 }
 async function getGoogleToken(userId) {
   try {
-    const { data, error } = await supabase.from("tasks").select("*").eq("user_id", userId).eq("title", "__SYSTEM_CONFIG__").eq("project", "OAuth").limit(1);
+    const { data, error } = await supabase.from("tasks").select("*").eq("user_id", userId).eq("title", "__SYSTEM_CONFIG__").eq("project", "OAuth").order("created_at", { ascending: false }).limit(1);
     if (error || !data || data.length === 0) return null;
     const subtasks = data[0].subtasks;
     if (subtasks && subtasks.length > 0) {

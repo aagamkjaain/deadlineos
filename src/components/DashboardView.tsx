@@ -6,7 +6,8 @@ import {
   RefreshCw,
   Mic,
   MicOff,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { TaskType } from '../types';
 import { generateScopeReduction, getApiKey } from '../services/gemini';
@@ -216,8 +217,17 @@ export default function DashboardView({
   const highlyPostponedTask = tasks.find(t => (t.postponedCount || 0) >= 3);
   const hasApiKey = !!getApiKey();
 
+  // Completion status calculation helper
+  const getCompletionStatus = (task: TaskType) => {
+    const progress = task.progress ?? 0;
+    if (progress === 100) return 'completed';
+    if (progress === 0) return 'not completed';
+    return 'pending';
+  };
+
   const handlePostponeTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // prevent starting focus session
+    const targetTask = tasks.find(t => t.id === taskId);
 
     // Optimistic UI update
     setTasks(prevTasks => prevTasks.map(t => {
@@ -238,6 +248,198 @@ export default function DashboardView({
       }
     } catch (err) {
       console.error('Failed to sync postponed task state to Supabase:', err);
+    }
+
+    // Google Calendar Update on Postpone
+    if (session?.provider_token && targetTask) {
+      try {
+        const queryUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?q=${encodeURIComponent(targetTask.title)}`;
+        const response = await fetch(queryUrl, {
+          headers: { Authorization: `Bearer ${session.provider_token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const events = data.items || [];
+          const matchingEvent = events.find((evt: any) => (evt.summary || '').includes(targetTask.title));
+          if (matchingEvent && matchingEvent.id) {
+            const oldStart = matchingEvent.start?.dateTime || matchingEvent.start?.date;
+            const oldEnd = matchingEvent.end?.dateTime || matchingEvent.end?.date;
+            if (oldStart && oldEnd) {
+              const newStart = new Date(new Date(oldStart).getTime() + 3600 * 1000).toISOString();
+              const newEnd = new Date(new Date(oldEnd).getTime() + 3600 * 1000).toISOString();
+              
+              const updateRes = await fetch(
+                `https://www.googleapis.com/calendar/v3/calendars/primary/events/${matchingEvent.id}`,
+                {
+                  method: 'PATCH',
+                  headers: {
+                    Authorization: `Bearer ${session.provider_token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    start: { dateTime: newStart },
+                    end: { dateTime: newEnd }
+                  })
+                }
+              );
+              if (updateRes.ok) {
+                console.log(`Successfully postponed Google Calendar event for task: ${targetTask.title}`);
+              } else {
+                console.error('Failed to update event time on Google Calendar:', await updateRes.text());
+              }
+            }
+          }
+        }
+      } catch (googleErr) {
+        console.error('Error updating Google Calendar event on postpone:', googleErr);
+      }
+    }
+  };
+
+  const handleRemoveTask = async (taskId: string, taskTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to remove the task "${taskTitle}"?`)) {
+      return;
+    }
+
+    // 1. Delete from Supabase if configured
+    const { supabase, isSupabaseConfigured } = await import('../services/supabase');
+    if (session && isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+        if (error) console.error('Failed to delete task from Supabase:', error);
+      } catch (dbErr) {
+        console.error('Failed to delete task from Supabase:', dbErr);
+      }
+    }
+
+    // 2. Local state update
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    if (activeSessionTaskId === taskId) {
+      setActiveSessionTaskId(null);
+      setSessionActive(false);
+      setSessionTime(0);
+    }
+
+    // 3. Remove/Delete from Google Calendar if provider_token is present
+    if (session?.provider_token) {
+      try {
+        const queryUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?q=${encodeURIComponent(taskTitle)}`;
+        const response = await fetch(queryUrl, {
+          headers: {
+            Authorization: `Bearer ${session.provider_token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const events = data.items || [];
+          const matchingEvent = events.find((evt: any) => {
+            const summary = evt.summary || '';
+            return summary.includes(taskTitle);
+          });
+          
+          if (matchingEvent && matchingEvent.id) {
+            const deleteRes = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events/${matchingEvent.id}`,
+              {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${session.provider_token}`
+                }
+              }
+            );
+            if (deleteRes.ok) {
+              console.log(`Successfully deleted Google Calendar event for task: ${taskTitle}`);
+            } else {
+              console.error('Failed to delete event from Google Calendar:', await deleteRes.text());
+            }
+          }
+        }
+      } catch (googleErr) {
+        console.error('Error during Google Calendar event deletion:', googleErr);
+      }
+    }
+  };
+
+  const handleUpdateCompletionStatus = async (taskId: string, newStatus: 'completed' | 'pending' | 'not completed') => {
+    const targetTask = tasks.find(t => t.id === taskId);
+    if (!targetTask) return;
+
+    let newProgress = 0;
+    if (newStatus === 'completed') {
+      newProgress = 100;
+    } else if (newStatus === 'pending') {
+      newProgress = 50;
+    } else {
+      newProgress = 0;
+    }
+
+    const newSubtasks = targetTask.subtasks?.map(st => ({
+      ...st,
+      completed: newStatus === 'completed' ? true : newStatus === 'not completed' ? false : st.completed
+    })) || [];
+
+    // Local state update
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        return {
+          ...t,
+          progress: newProgress,
+          subtasks: newSubtasks
+        };
+      }
+      return t;
+    }));
+
+    // Sync to Supabase if configured
+    try {
+      const { updateTaskSubtasks, isSupabaseConfigured } = await import('../services/supabase');
+      if (isSupabaseConfigured()) {
+        await updateTaskSubtasks(taskId, newSubtasks);
+        const { supabase } = await import('../services/supabase');
+        await supabase
+          .from('tasks')
+          .update({ progress: newProgress })
+          .eq('id', taskId);
+      }
+    } catch (err) {
+      console.error('Failed to sync completion status to Supabase:', err);
+    }
+
+    // Google Calendar Update
+    if (session?.provider_token) {
+      try {
+        const queryUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?q=${encodeURIComponent(targetTask.title)}`;
+        const response = await fetch(queryUrl, {
+          headers: { Authorization: `Bearer ${session.provider_token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const events = data.items || [];
+          const matchingEvent = events.find((evt: any) => (evt.summary || '').includes(targetTask.title));
+          if (matchingEvent && matchingEvent.id) {
+            const updateRes = await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/primary/events/${matchingEvent.id}`,
+              {
+                method: 'PATCH',
+                headers: {
+                  Authorization: `Bearer ${session.provider_token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  description: `Project: ${targetTask.project}\nPriority: ${targetTask.status.toUpperCase()}\nStatus: ${newStatus.toUpperCase()}`
+                })
+              }
+            );
+            if (updateRes.ok) {
+              console.log(`Successfully updated Google Calendar status for task: ${targetTask.title}`);
+            }
+          }
+        }
+      } catch (googleErr) {
+        console.error('Error updating Google Calendar event status:', googleErr);
+      }
     }
   };
 
@@ -652,16 +854,34 @@ export default function DashboardView({
                     }`}
                 >
                   <div className="flex justify-between items-start mb-3">
-                    <span
-                      className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider ${isCritical
-                        ? 'bg-error-container/20 text-error border border-error/10'
-                        : isNormal
-                          ? 'bg-primary-container/20 text-primary border border-primary/10'
-                          : 'bg-secondary-container/20 text-secondary border border-secondary/10'
+                    <div className="flex flex-col gap-1.5">
+                      <span
+                        className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider w-max ${isCritical
+                          ? 'bg-error-container/20 text-error border border-error/10'
+                          : isNormal
+                            ? 'bg-primary-container/20 text-primary border border-primary/10'
+                            : 'bg-secondary-container/20 text-secondary border border-secondary/10'
+                          }`}
+                      >
+                        {task.status.toUpperCase()}
+                      </span>
+                      <select
+                        value={getCompletionStatus(task)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleUpdateCompletionStatus(task.id, e.target.value as any)}
+                        className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold tracking-wider cursor-pointer outline-none border bg-transparent ${
+                          getCompletionStatus(task) === 'completed'
+                            ? 'bg-secondary-container/20 text-secondary border-secondary/20'
+                            : getCompletionStatus(task) === 'pending'
+                              ? 'bg-tertiary-container/20 text-tertiary border-tertiary/20'
+                              : 'bg-surface-container-high/40 text-on-surface-variant border-outline/20'
                         }`}
-                    >
-                      {task.status.toUpperCase()}
-                    </span>
+                      >
+                        <option value="not completed" className="bg-surface-container text-white">NOT COMPLETED</option>
+                        <option value="pending" className="bg-surface-container text-white">PENDING</option>
+                        <option value="completed" className="bg-surface-container text-white">COMPLETED</option>
+                      </select>
+                    </div>
                     <div className="text-right">
                       <span className="font-mono text-[8px] text-on-surface-variant block tracking-wider">
                         DEADLINE
@@ -683,13 +903,22 @@ export default function DashboardView({
                     <p className="font-mono text-[8px] text-on-surface-variant/70">
                       Postponed: <span className={task.postponedCount && task.postponedCount >= 3 ? 'text-error font-bold font-sans' : 'text-white font-mono'}>{task.postponedCount || 0}</span>
                     </p>
-                    <button
-                      onClick={(e) => handlePostponeTask(task.id, e)}
-                      className="px-2 py-1 bg-surface-container hover:bg-surface-container-high border border-outline/50 hover:text-primary font-mono text-[8px] rounded uppercase font-bold transition-all cursor-pointer"
-                      title="Delay task by 1 hour"
-                    >
-                      Postpone +1h
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => handlePostponeTask(task.id, e)}
+                        className="px-2 py-1 bg-surface-container hover:bg-surface-container-high border border-outline/50 hover:text-primary font-mono text-[8px] rounded uppercase font-bold transition-all cursor-pointer"
+                        title="Delay task by 1 hour"
+                      >
+                        Postpone +1h
+                      </button>
+                      <button
+                        onClick={(e) => handleRemoveTask(task.id, task.title, e)}
+                        className="p-1 text-on-surface-variant hover:text-error hover:bg-error/10 border border-transparent hover:border-error/20 rounded transition-all cursor-pointer flex items-center justify-center"
+                        title="Remove task from queue"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

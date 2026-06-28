@@ -22,6 +22,13 @@ export default function FocusView({
   setSessionActive,
   setSessionTime
 }: FocusViewProps) {
+  const getCompletionStatus = (task: TaskType) => {
+    const progress = task.progress ?? 0;
+    if (progress === 100) return 'completed';
+    if (progress === 0) return 'not completed';
+    return 'pending';
+  };
+
   const activeTask = tasks.find(t => t.id === activeSessionTaskId) || tasks[0];
   const [seconds, setSeconds] = useState(1500); // 25:00 Pomodoro
   const running = sessionActive;
@@ -120,7 +127,9 @@ export default function FocusView({
                 className="w-full bg-surface-container border border-outline rounded-lg px-3 py-2 text-xs text-white outline-none"
               >
                 {tasks.map(t => (
-                  <option key={t.id} value={t.id}>{t.title} ({t.project})</option>
+                  <option key={t.id} value={t.id}>
+                    [{getCompletionStatus(t).toUpperCase()}] {t.title} ({t.project})
+                  </option>
                 ))}
               </select>
             </div>

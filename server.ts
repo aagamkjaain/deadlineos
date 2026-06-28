@@ -516,6 +516,7 @@ async function getGoogleToken(userId: string): Promise<string | null> {
       .eq('user_id', userId)
       .eq('title', '__SYSTEM_CONFIG__')
       .eq('project', 'OAuth')
+      .order('created_at', { ascending: false })
       .limit(1);
 
     if (error || !data || data.length === 0) return null;

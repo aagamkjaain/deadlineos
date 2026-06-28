@@ -9,13 +9,14 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function main() {
   const { data, error } = await supabase
-    .from('users')
-    .select('*');
+    .from('tasks')
+    .select('*')
+    .eq('title', '__SYSTEM_CONFIG__');
 
   if (error) {
-    console.error('Error fetching users:', error);
+    console.error('Error fetching config:', error);
   } else {
-    console.log('Users list:', data);
+    console.log('Config rows:', data);
   }
 }
 

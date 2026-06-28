@@ -81,6 +81,37 @@ export default function App() {
       }
     }
 
+    // Sync to Google Calendar
+    if (session?.provider_token) {
+      const now = new Date();
+      const targetDate = new Date(now.getTime() + hours * 3600 * 1000);
+      const startDateTime = now.toISOString();
+      const endDateTime = targetDate.toISOString();
+      try {
+        const res = await fetch(
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.provider_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              summary: `🎯 Voice Assistant Plan: ${title}`,
+              description: `Project: Voice Assistant Plan\nPriority: ${status.toUpperCase()}\nStatus: NOT COMPLETED`,
+              start: { dateTime: startDateTime },
+              end: { dateTime: endDateTime }
+            })
+          }
+        );
+        if (!res.ok) {
+          console.error('Google Calendar event creation failed from voice assistant:', await res.text());
+        }
+      } catch (googleErr) {
+        console.error('Failed to sync to Google Calendar from voice assistant:', googleErr);
+      }
+    }
+
     const newTask: TaskType = {
       id: dbTaskId,
       title,
@@ -180,6 +211,37 @@ export default function App() {
       } catch (err) {
         console.error('Failed to create task in Supabase:', err);
         alert('Failed to save task to cloud. Saving locally instead.');
+      }
+    }
+
+    // Sync to Google Calendar
+    if (session?.provider_token) {
+      const now = new Date();
+      const targetDate = new Date(now.getTime() + newTaskHours * 3600 * 1000);
+      const startDateTime = now.toISOString();
+      const endDateTime = targetDate.toISOString();
+      try {
+        const res = await fetch(
+          'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.provider_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              summary: `🎯 ${newTaskProject}: ${newTaskTitle}`,
+              description: `Project: ${newTaskProject}\nPriority: ${newTaskStatus.toUpperCase()}\nStatus: NOT COMPLETED`,
+              start: { dateTime: startDateTime },
+              end: { dateTime: endDateTime }
+            })
+          }
+        );
+        if (!res.ok) {
+          console.error('Google Calendar event creation failed from command palette:', await res.text());
+        }
+      } catch (googleErr) {
+        console.error('Failed to sync to Google Calendar from command palette:', googleErr);
       }
     }
 
