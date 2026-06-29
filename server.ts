@@ -469,6 +469,73 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 });
 
 // Serve frontend assets in production
+app.get('/api/ml/productivity/:userId', async (req, res) => {
+  const userId = req.params.userId;
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId parameter' });
+  }
+
+  try {
+    // 1. Fetch user's tasks from Supabase
+    const userTasks = await getTasksByUserId(userId);
+    
+    // Map tasks keys matching what predict.py expects
+    const tasksPayload = userTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      project: t.project,
+      status: t.status,
+      countdownSeconds: t.countdown_seconds,
+      progress: t.progress,
+      difficulty: t.difficulty,
+      impact: t.impact,
+      postponedCount: t.postponed_count,
+      createdAt: t.created_at
+    }));
+
+    // 2. Spawn Python subprocess to get prediction output
+    const { spawn } = await import('child_process');
+    const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3';
+    
+    const pyProcess = spawn(pythonExecutable, ['ml_pipeline/predict.py']);
+    
+    let outputData = '';
+    let errorData = '';
+
+    pyProcess.stdout.on('data', (chunk) => {
+      outputData += chunk.toString();
+    });
+
+    pyProcess.stderr.on('data', (chunk) => {
+      errorData += chunk.toString();
+    });
+
+    pyProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error('Python prediction script error exit code:', code, errorData);
+        return res.status(500).json({ error: 'ML engine error', details: errorData });
+      }
+
+      try {
+        const result = JSON.parse(outputData.trim());
+        return res.json(result);
+      } catch (parseErr) {
+        console.error('Failed to parse Python model response:', outputData, parseErr);
+        return res.status(500).json({ error: 'Failed to parse ML response' });
+      }
+    });
+
+    // Write inputs JSON string to python process stdin and end stream
+    pyProcess.stdin.write(JSON.stringify(tasksPayload));
+    pyProcess.stdin.end();
+
+  } catch (err: any) {
+    console.error('Error running ML productivity pipeline endpoint:', err);
+    return res.status(500).json({ error: 'Server prediction failure', details: err.message });
+  }
+});
+
+// Serve frontend assets in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'dist')));
   app.get('*', (req, res) => {

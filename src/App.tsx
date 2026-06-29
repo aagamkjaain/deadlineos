@@ -48,6 +48,34 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [initialPrompt, setInitialPrompt] = useState<string>('');
 
+  // ML Productivity states
+  const [mlProductivityData, setMlProductivityData] = useState<any>(null);
+  const [mlLoading, setMlLoading] = useState<boolean>(false);
+  const [mlError, setMlError] = useState<string | null>(null);
+
+  // Fetch ML stats when Habits screen opens
+  useEffect(() => {
+    if (activeScreen === 'habits' && session?.user) {
+      setMlLoading(true);
+      setMlError(null);
+      fetch(`/api/ml/productivity/${session.user.id}`)
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to load productivity score');
+          return res.json();
+        })
+        .then(data => {
+          setMlProductivityData(data);
+        })
+        .catch(err => {
+          console.error('ML API Error:', err);
+          setMlError(err.message || 'Productivity analysis failed');
+        })
+        .finally(() => {
+          setMlLoading(false);
+        });
+    }
+  }, [activeScreen, session]);
+
   // Form states for creating a new task
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskProject, setNewTaskProject] = useState('Nexus Core');
@@ -516,73 +544,179 @@ export default function App() {
 
   const renderHabitsView = () => {
     const completedTasksCount = tasks.filter(t => t.progress === 100).length;
-    
-    // Streak is dynamically calculated as the count of fully completed tasks
     const currentStreak = Math.min(completedTasksCount, 28);
 
-    // Build habits grid based on the index and completion states of active tasks
     const habitsGrid = Array.from({ length: 28 }).map((_, idx) => {
-      // Dynamically light up boxes based on completion stats & progress
       const taskIndex = idx % Math.max(1, tasks.length);
       const associatedTask = tasks[taskIndex];
-      
       let active = false;
       let highlyActive = false;
-
-      if (associatedTask) {
+      if (associatedTask && tasks.length > 0) {
         active = (associatedTask.progress || 0) > 0;
         highlyActive = associatedTask.progress === 100;
       } else {
-        // Fallback grid pattern if tasks is empty
         active = idx % 5 === 0;
         highlyActive = idx % 11 === 0;
       }
-
       return { active, highlyActive };
     });
+
+    const score = mlProductivityData?.productivity_score ?? 0;
+    const scoreColor = score >= 8.0 ? 'text-secondary' : score >= 5.0 ? 'text-tertiary' : 'text-error';
+    const scoreText = score >= 8.0 ? 'Peak Productivity' : score >= 5.0 ? 'Steady Focus' : 'Procrastination Warn';
 
     return (
       <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
         <div>
           <h2 className="text-white text-3xl font-bold tracking-tight flex items-center gap-2">
             <CheckCircle className="text-primary w-8 h-8" />
-            <span>Performance Habits Matrix</span>
+            <span>Habits & AI Diagnostics</span>
           </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Stay adherent to deep work blocks, deep focus routines, and scheduled standups.
+            Analyze focus habits, complete deep work grids, and review machine learning diagnostics.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          <div className="md:col-span-8 glass-card p-6 rounded-2xl border border-outline/30">
-            <h3 className="font-sans font-bold text-base text-white mb-6">Deep Work Consistency Grid</h3>
-            <div className="grid grid-cols-7 gap-2">
-              {habitsGrid.map((cell, idx) => (
-                <div
-                  key={idx}
-                  className={`aspect-square rounded border ${
-                    cell.highlyActive
-                      ? 'bg-secondary border-secondary/30'
-                      : cell.active
-                      ? 'bg-primary/40 border-primary/20'
-                      : 'bg-surface-container-low border-outline/30'
-                  }`}
-                  title={`Day ${idx + 1}`}
-                ></div>
-              ))}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+          
+          {/* Consistency Grid */}
+          <div className="lg:col-span-6 glass-card p-6 rounded-2xl border border-outline/30 flex flex-col justify-between">
+            <div>
+              <h3 className="font-sans font-bold text-base text-white mb-6">Deep Work Consistency Grid</h3>
+              <div className="grid grid-cols-7 gap-2.5">
+                {habitsGrid.map((cell, idx) => (
+                  <div
+                    key={idx}
+                    className={`aspect-square rounded-lg border transition-all ${
+                      cell.highlyActive
+                        ? 'bg-secondary border-secondary/30 shadow-lg shadow-secondary/10'
+                        : cell.active
+                        ? 'bg-primary/45 border-primary/20'
+                        : 'bg-surface-container-low border-outline/30'
+                    }`}
+                    title={`Day ${idx + 1}`}
+                  ></div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="pt-6 border-t border-outline/20 mt-6 flex justify-between items-center">
+              <div>
+                <span className="font-mono text-[9px] text-on-surface-variant block uppercase tracking-wider">Current Streak</span>
+                <span className="text-white text-lg font-bold">{currentStreak} Active Days</span>
+              </div>
+              <div className="flex gap-2 text-[10px] items-center">
+                <span className="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+                <span className="text-on-surface-variant font-mono mr-2">Highly Active</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-primary/40"></span>
+                <span className="text-on-surface-variant font-mono">In Progress</span>
+              </div>
             </div>
           </div>
-          <div className="md:col-span-4 glass-card p-6 rounded-2xl border border-outline/30 flex flex-col justify-between">
-            <div>
-              <Sparkles className="text-primary w-6 h-6 mb-4" />
-              <h3 className="font-sans font-bold text-sm text-white mb-2">Performance Routine</h3>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                Deep work block routines logged successfully. Current streak: <span className="text-secondary font-bold">{currentStreak} Day{currentStreak === 1 ? '' : 's'}</span>. Optimized workspace limits active.
-              </p>
+
+          {/* ML Productivity Diagnostics panel */}
+          <div className="lg:col-span-6 glass-card p-6 rounded-2xl border border-outline/30 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div className="space-y-6 flex-grow">
+              <div className="flex justify-between items-center border-b border-outline/25 pb-3">
+                <h3 className="font-sans font-bold text-base text-white flex items-center gap-2">
+                  <Cpu className="text-primary w-4 h-4" />
+                  <span>ML Score & Diagnostics</span>
+                </h3>
+                <span className="font-mono text-[9px] text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                  LIGHTGBM REGRESSOR
+                </span>
+              </div>
+
+              {mlLoading ? (
+                <div className="flex flex-col items-center justify-center h-48 space-y-3">
+                  <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+                  <span className="text-xs text-on-surface-variant font-mono">Running ML models validation...</span>
+                </div>
+              ) : mlError ? (
+                <div className="bg-error/15 border border-error/25 p-4 rounded-xl text-xs text-error font-mono flex items-center justify-center min-h-[120px]">
+                  ⚠️ Error running diagnostics: {mlError}
+                </div>
+              ) : mlProductivityData ? (
+                <div className="space-y-6">
+                  
+                  {/* Gauge style score */}
+                  <div className="flex items-center gap-6 bg-surface-container/30 border border-outline/20 p-4 rounded-xl">
+                    <div className="text-center">
+                      <span className="font-mono text-[8px] text-on-surface-variant uppercase tracking-wider block">Score</span>
+                      <span className={`text-4xl font-extrabold tracking-tighter ${scoreColor}`}>{score}</span>
+                      <span className="text-[10px] text-on-surface-variant block mt-0.5">out of 10</span>
+                    </div>
+                    <div className="flex-1 border-l border-outline/30 pl-6 space-y-1">
+                      <span className="text-xs text-white font-bold block">{scoreText}</span>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        Predicted score dynamically computed by analyzing task descriptions, postponed rates, and elapsed hours.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Feature importance weights list */}
+                  <div className="space-y-3">
+                    <span className="font-mono text-[9px] text-on-surface-variant block uppercase tracking-wider">Top Drivers of Productivity</span>
+                    <div className="space-y-2">
+                      {Object.entries(mlProductivityData.feature_importance || {}).map(([key, val]: any) => (
+                        <div key={key} className="space-y-1">
+                          <div className="flex justify-between text-[10px] text-on-surface-variant font-medium">
+                            <span>{key}</span>
+                            <span>{Math.round(val * 100)}% weight</span>
+                          </div>
+                          <div className="h-1 bg-surface-container rounded-full overflow-hidden">
+                            <div className="h-full bg-primary" style={{ width: `${val * 100}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recommendations */}
+                  <div className="space-y-3 pt-2">
+                    <span className="font-mono text-[9px] text-on-surface-variant block uppercase tracking-wider">Productivity Recommendations</span>
+                    <ul className="space-y-2.5">
+                      {(mlProductivityData.recommendations || []).map((rec: string, index: number) => (
+                        <li key={index} className="flex gap-2.5 items-start text-xs text-on-surface-variant leading-relaxed text-left">
+                          <span className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0 mt-1.5"></span>
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-48 text-center text-xs text-on-surface-variant">
+                  No predictions generated. Click refresh to query the ML engine.
+                </div>
+              )}
             </div>
-            <button className="mt-8 py-3 bg-secondary text-on-secondary font-bold text-xs rounded-lg hover:brightness-110 active:scale-95 transition-all">
-              Log Todays deep focus
+
+            <button
+              onClick={() => {
+                if (session?.user) {
+                  setMlLoading(true);
+                  setMlError(null);
+                  fetch(`/api/ml/productivity/${session.user.id}`)
+                    .then(res => {
+                      if (!res.ok) throw new Error('Failed to load productivity score');
+                      return res.json();
+                    })
+                    .then(data => setMlProductivityData(data))
+                    .catch(err => setMlError(err.message || 'Productivity analysis failed'))
+                    .finally(() => setMlLoading(false));
+                }
+              }}
+              disabled={mlLoading}
+              className="mt-6 w-full py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+            >
+              Force Diagnostics Recalculate
             </button>
           </div>
+
         </div>
       </div>
     );
