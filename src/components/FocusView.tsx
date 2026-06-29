@@ -62,6 +62,12 @@ export default function FocusView({
         const completedCount = newSubtasks.filter(st => st.completed).length;
         const progress = Math.round((completedCount / newSubtasks.length) * 100);
 
+        if (progress === 100) {
+          localStorage.setItem(`task_completed_${taskId}`, new Date().toISOString());
+        } else {
+          localStorage.removeItem(`task_completed_${taskId}`);
+        }
+
         // Asynchronously sync to Supabase if configured
         if (isSupabaseConfigured()) {
           import('../services/supabase').then(({ updateSubtaskStatus }) => {

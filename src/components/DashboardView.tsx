@@ -374,10 +374,13 @@ export default function DashboardView({
     let newProgress = 0;
     if (newStatus === 'completed') {
       newProgress = 100;
+      localStorage.setItem(`task_completed_${taskId}`, new Date().toISOString());
     } else if (newStatus === 'pending') {
       newProgress = 50;
+      localStorage.removeItem(`task_completed_${taskId}`);
     } else {
       newProgress = 0;
+      localStorage.removeItem(`task_completed_${taskId}`);
     }
 
     const newSubtasks = targetTask.subtasks?.map(st => ({
@@ -842,7 +845,7 @@ export default function DashboardView({
 
           {/* List of Countdown cards */}
           <div className="space-y-4">
-            {tasks.map((task) => {
+            {tasks.filter(t => (t.progress ?? 0) < 100).map((task) => {
               const countdownStr = formatCountdown(task.countdownSeconds);
               const isCritical = task.status === 'critical';
               const isNormal = task.status === 'normal';

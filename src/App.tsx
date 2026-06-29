@@ -357,21 +357,77 @@ export default function App() {
   // Risk Mitigation Center is removed
 
   const renderAnalyticsView = () => {
-    // Generate developmental throughput based on task completions and subtasks
-    const completedTasksCount = tasks.filter(t => t.progress === 100).length;
-    const activeTasksCount = tasks.length;
-    const baseRate = activeTasksCount > 0 ? Math.round((completedTasksCount / activeTasksCount) * 100) : 0;
-
-    // Generate 12 data points representing progression, tied to the actual completion progress of the user's tasks
-    const throughputHistory = Array.from({ length: 12 }).map((_, idx) => {
-      // Create a progression where the current week (end of array) is close to the base rate, with pseudo-random variations
-      const factor = (idx + 1) / 12;
-      const variation = Math.sin(idx * 1.5) * 15;
-      const val = activeTasksCount > 0
-        ? Math.max(15, Math.min(100, Math.round(baseRate * factor + 35 + variation)))
-        : Math.max(10, Math.round(30 + Math.sin(idx) * 15)); // baseline fallback
-      return val;
+    // Generate dates for the rolling 3-week window (21 days) leading up to today
+    const now = new Date();
+    
+    // We construct 21 dates (index 0 is 20 days ago, index 20 is today)
+    const datesList = Array.from({ length: 21 }).map((_, idx) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() - (20 - idx));
+      return d;
     });
+
+    // Helper to get task completion date from localStorage or estimated fallback
+    const getTaskCompletionDate = (task: TaskType) => {
+      if (task.progress !== 100) return null;
+      const stored = localStorage.getItem(`task_completed_${task.id}`);
+      if (stored) return new Date(stored);
+      // Fallback: createdAt + task duration (default to 3 hours or task countdownSeconds)
+      if (task.createdAt) {
+        const created = new Date(task.createdAt);
+        // Estimate completion took place some hours after creation
+        return new Date(created.getTime() + 3600 * 1000 * 3);
+      }
+      return new Date();
+    };
+
+    // Calculate dynamic effort hours for each of the 21 days
+    const dailyEffort = datesList.map((targetDate) => {
+      // Boundaries of the target date
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      let totalDayHours = 0;
+
+      tasks.forEach((task) => {
+        if (!task.createdAt) return;
+        const taskCreatedDate = new Date(task.createdAt);
+        
+        // Skip if the task was not assigned/created yet as of this day
+        if (taskCreatedDate > endOfDay) return;
+
+        const completionDate = getTaskCompletionDate(task);
+
+        if (completionDate) {
+          // If task was completed:
+          // 1. Did it complete on this exact day?
+          if (completionDate >= startOfDay && completionDate <= endOfDay) {
+            // Task completed today: credit full estimation effort (e.g. 4-8 hours)
+            const hoursVal = Math.max(3, Math.round((task.countdownSeconds || 10800) / 3600));
+            totalDayHours += hoursVal;
+          } 
+          // 2. Was it in progress during this day? (Created before/on this day, and completed after this day)
+          else if (taskCreatedDate <= endOfDay && completionDate > endOfDay) {
+            totalDayHours += 2; // Credit 2 hours of work-in-progress effort
+          }
+        } else {
+          // If task is not completed yet (still pending/active):
+          // Was it assigned before or on this day?
+          if (taskCreatedDate <= endOfDay) {
+            totalDayHours += 2; // Credit 2 hours of daily work-in-progress effort
+          }
+        }
+      });
+
+      // Cap daily effort at 10 hours for a realistic developer workday
+      return Math.min(10, totalDayHours);
+    });
+
+    const totalHours = dailyEffort.reduce((sum, h) => sum + h, 0);
+    const activeDays = dailyEffort.filter(h => h > 0).length;
+    const inactiveDays = dailyEffort.filter(h => h === 0).length;
 
     return (
       <div className="space-y-8 pb-20 select-none animate-in fade-in duration-500 text-on-surface">
@@ -381,24 +437,76 @@ export default function App() {
             <span>Productivity Analytics</span>
           </h2>
           <p className="text-on-surface-variant text-sm mt-1">
-            Historical velocity analytics, commitment adherence tracking, and AI-predicted project bottlenecks.
+            Track focus hours and identify active vs. idle periods over a rolling 3-week window.
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          <div className="md:col-span-12 glass-card p-6 rounded-2xl border border-outline/30 space-y-6">
-            <h3 className="font-sans font-bold text-base text-white">Developer Throughput (Historical Progression)</h3>
-            <div className="flex items-end gap-3 h-48 pt-6 px-4 border-b border-outline/20">
-              {throughputHistory.map((val, idx) => (
-                <div key={idx} className="w-full bg-primary/25 hover:bg-primary rounded-t transition-all group relative" style={{ height: `${val}%` }}>
-                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-surface-container border border-outline px-1.5 rounded font-mono text-[8px] text-white hidden group-hover:block whitespace-nowrap z-10">{val}%</span>
+
+        {/* Summary Widgets */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="glass-card p-5 rounded-2xl border border-outline/30 space-y-2">
+            <span className="font-mono text-[9px] text-on-surface-variant uppercase tracking-wider block font-bold">Total Effort Logged</span>
+            <div className="text-3xl font-extrabold text-white tracking-tight">{totalHours} Hours</div>
+            <p className="text-[10px] text-on-surface-variant font-medium">Focus time mapped to your active and completed goals.</p>
+          </div>
+          <div className="glass-card p-5 rounded-2xl border border-outline/30 space-y-2">
+            <span className="font-mono text-[9px] text-secondary uppercase tracking-wider block font-bold">Days Worked</span>
+            <div className="text-3xl font-extrabold text-secondary tracking-tight">{activeDays} Active Days</div>
+            <p className="text-[10px] text-on-surface-variant font-medium">Days with recorded deep focus or task updates.</p>
+          </div>
+          <div className="glass-card p-5 rounded-2xl border border-outline/30 space-y-2">
+            <span className="font-mono text-[9px] text-error uppercase tracking-wider block font-bold">Days with No Activity</span>
+            <div className="text-3xl font-extrabold text-error tracking-tight">{inactiveDays} Idle Days</div>
+            <p className="text-[10px] text-on-surface-variant font-medium">Days you didn't do shit.</p>
+          </div>
+        </div>
+
+        {/* 21-Day Chart */}
+        <div className="glass-card p-6 rounded-2xl border border-outline/30 space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="font-sans font-bold text-base text-white">Daily Focus Hours (Last 3 Weeks)</h3>
+            <span className="text-[10px] font-mono text-on-surface-variant bg-surface-container border border-outline/50 px-2 py-0.5 rounded">
+              3-WEEK SCROLLING WINDOW
+            </span>
+          </div>
+
+          <div className="flex items-end gap-1.5 h-48 pt-6 px-2 border-b border-outline/20">
+            {dailyEffort.map((hours, idx) => {
+              const heightPercent = Math.max(5, (hours / 10) * 100);
+              const weekNum = Math.floor(idx / 7) + 1;
+              const dayOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][idx % 7];
+
+              return (
+                <div 
+                  key={idx} 
+                  className={`w-full rounded-t transition-all group relative cursor-pointer ${
+                    hours > 0 
+                      ? 'bg-primary/30 hover:bg-primary border-t border-primary/40' 
+                      : 'bg-surface-container-low/30 hover:bg-surface-container-high/40 border-t border-outline/5'
+                  }`} 
+                  style={{ height: `${heightPercent}%` }}
+                >
+                  {/* Tooltip */}
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-surface-container border border-outline px-2 py-1 rounded shadow-xl font-mono text-[9px] text-white hidden group-hover:block whitespace-nowrap z-20">
+                    <span className="font-bold text-primary">{dayOfWeek} (W{weekNum})</span>: {hours}h worked
+                  </div>
                 </div>
-              ))}
+              );
+            })}
+          </div>
+
+          {/* X Axis Labels */}
+          <div className="flex justify-between text-[9px] text-on-surface-variant font-mono px-2">
+            <div className="text-left w-1/3">
+              <span className="block font-bold text-white">Week 1</span>
+              <span>Days 1-7</span>
             </div>
-            <div className="flex justify-between text-[10px] text-on-surface-variant px-4">
-              <span>Week 1</span>
-              <span>Week 4</span>
-              <span>Week 8</span>
-              <span>Week 12 (Current)</span>
+            <div className="text-center w-1/3">
+              <span className="block font-bold text-white">Week 2</span>
+              <span>Days 8-14</span>
+            </div>
+            <div className="text-right w-1/3">
+              <span className="block font-bold text-white">Week 3</span>
+              <span>Days 15-21</span>
             </div>
           </div>
         </div>

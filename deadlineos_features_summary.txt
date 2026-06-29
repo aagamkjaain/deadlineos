@@ -1,0 +1,104 @@
+================================================================================
+                         DEADLINEOS - FEATURE SUMMARY
+================================================================================
+
+DeadlineOS is an AI-powered Chief of Staff and developer productivity companion 
+designed to automate goal planning, schedule deadlines dynamically, mitigate schedule 
+risks, and optimize deep-work workflows. The system integrates a premium React web 
+dashboard, a backend orchestrator, Google Calendar API synchronization, WhatsApp 
+messaging, and Telegram bot chat endpoints.
+
+--------------------------------------------------------------------------------
+1. CORE WEB DASHBOARD & USER SHELL (App.tsx / Sidebar.tsx)
+--------------------------------------------------------------------------------
+* Premium Visual Theme: Premium dark mode interface designed with glassmorphism, 
+  smooth CSS transitions, and Lucide Icons.
+* Unified App Shell: Persistent left-hand sidebar navigation displaying the active 
+  screen state and the current user's profile card.
+* User Authentication (LandingView.tsx): 
+  - Login and sign-up interfaces powered by Supabase Auth.
+  - Supports standard Email/Password authentication.
+  - Supports Google OAuth single sign-on (fetching calendars write permissions).
+* Session HUD Indicator: Displays an active focus session status bar at the top of 
+  the workspace with live-elapsed timing when a Pomodoro block or task focus starts.
+
+--------------------------------------------------------------------------------
+2. CALENDAR & TASK PRIORITY QUEUE (DashboardView.tsx)
+--------------------------------------------------------------------------------
+* Interactive Monthly Grid: Monthly calendar grid matching current calendar layouts. 
+  Clicking any date cell triggers a modal to schedule tasks directly.
+* Real-Time Priority Cards: Mapped tasks listing with ticking live countdown 
+  timers, priority badge levels (Critical, Normal, Deferred), and progress tracking.
+* Interactive Progress Controls: Inline state selection to toggle task status 
+  between "Not Completed", "Pending", and "Completed" to auto-update progress values.
+* AI Audio Narration Command Panel: 
+  - Dictate actions using the microphone button (uses the navigator media API).
+  - Transcribes voice notes on the fly and populates the command input text field.
+  - Processes prompt narrations using AI to extract deadlines and goals.
+* Anti-Procrastination Warnings & Scope Reduction (Gemini AI):
+  - Automatically raises a warning banner if a task is postponed three or more times.
+  - Features an AI-powered "Auto-Reduce Scope" button that calls Gemini to 
+    trim subtasks and provide an anti-procrastination coaching justification.
+
+--------------------------------------------------------------------------------
+3. ROADMAP PLANNER & INTELLIGENCE AGENT (IntelligenceView.tsx)
+--------------------------------------------------------------------------------
+* Gemini Goal Planner: Parses natural language objectives (e.g., "Plan DBMS exam 
+  due Friday") to dynamically decompose them into detailed subtask roadmaps.
+* Parameter Estimation: Automatically estimates overall duration in hours, 
+  difficulty score (1-10), impact score (1-10), and splits them into timeline phases.
+* Direct Syncing: Automatically writes generated subtasks checklist details into 
+  the Supabase database and schedules them sequentially onto Google Calendar.
+* Interactive Voice Interface: 
+  - Voice command processing via speech recognition (local browser recognition 
+    under Ollama mode, or audio recording translation under Gemini mode).
+  - Voice feedback system utilizing browser SpeechSynthesis to announce planning.
+
+--------------------------------------------------------------------------------
+4. DEEP FOCUS POMODORO SANDBOX (FocusView.tsx)
+--------------------------------------------------------------------------------
+* Pomodoro Timer: Integrated countdown timer initialized to a 25-minute focus period.
+* Focus Selector: Dropdown to link the Pomodoro block to any active task from 
+  the user's queue.
+* Subtask Checklist: Interactive list displaying subtask checkboxes for the active 
+  focus task. Checking items updates the main task progress dynamically in the DB.
+* Workspace Noise HUD: Audio generator selectors for focus white-noise loops 
+  (Brown Noise, Rain Static).
+
+--------------------------------------------------------------------------------
+5. MILESTONES & PRODUCTIVITY METRICS (App.tsx rendering)
+--------------------------------------------------------------------------------
+* Milestone Architect: Tracks active timeline targets dynamically compiled from 
+  the task database. Visualizes completion rates and highlights "Blocked" blocks.
+* Productivity Analytics: Weekly throughput bar graphs mapped dynamically based on 
+  the user's real task completion progress.
+* Habits Grid: GitHub-style 28-day heat-map grid detailing activity levels. Lights 
+  up blocks depending on task state and updates current work-day streaks.
+
+--------------------------------------------------------------------------------
+6. INTEGRATION CONFIGURATIONS (Settings Panel)
+--------------------------------------------------------------------------------
+* AI Model Engine Calibration: Toggle between Gemini Cloud API (requiring API key) 
+  and Ollama Local Offline API (custom host URL and LLM model selection).
+* Notification Integrations:
+  - WhatsApp Synchronization: Input field to save and verify phone numbers.
+  - Telegram Bot Pair: One-click "Connect Telegram Bot" button which passes the 
+    user session ID to link the accounts.
+
+--------------------------------------------------------------------------------
+7. BACKEND SERVERS & COMMUNICATIONS FLOW (server.ts)
+--------------------------------------------------------------------------------
+* WhatsApp Webhook: 
+  - Parses incoming messages from Twilio WhatsApp numbers.
+  - Transcribes WhatsApp audio notes directly using Gemini models.
+  - Classifies user intent (Help Guide, Create Goal, Daily Plan, Complete Subtask, 
+    Reschedule, Status Check, or Panic emergency triage).
+  - Triage "Panic Mode": Condenses checklist tasks using Gemini, skipping nice-to-haves 
+    to output a minimized must-do crisis survival protocol.
+* Telegram Bot loop:
+  - Multi-threaded long-polling handler matching callback queries.
+  - Deep-link pairing linking custom chat IDs to Supabase profiles.
+  - AI roadmap generation on query command, responding with interactive inline 
+    keyboard buttons ("Approve Plan" or "Reject Plan").
+  - Automated database updates and Google Calendar OAuth event creation on approval.
+================================================================================
