@@ -62,8 +62,8 @@ export async function getOrCreateUser(phoneNumber: string): Promise<DbUser> {
     throw new Error('Supabase client is not configured. Please add SUPABASE_URL and SUPABASE_KEY to your environment/settings.');
   }
 
-  // Normalize phone number (trim whitespace and normalize structure)
-  const normPhone = phoneNumber.trim().replace('whatsapp:', '');
+  const normPhone = phoneNumber.trim();
+  const activeChannel = normPhone.startsWith('telegram:') ? 'telegram' : 'web';
 
   // 1. Search user
   const { data: user, error: fetchErr } = await supabase
@@ -83,7 +83,7 @@ export async function getOrCreateUser(phoneNumber: string): Promise<DbUser> {
   // 2. Create user if missing
   const { data: newUser, error: insertErr } = await supabase
     .from('users')
-    .insert({ phone_number: normPhone, channel: 'whatsapp' })
+    .insert({ phone_number: normPhone, channel: activeChannel })
     .select()
     .single();
 
@@ -102,8 +102,7 @@ export async function getUserByPhoneNumber(phoneNumber: string): Promise<DbUser 
     throw new Error('Supabase client is not configured. Please add SUPABASE_URL and SUPABASE_KEY to your environment/settings.');
   }
 
-  // Normalize phone number (trim whitespace and normalize structure)
-  const normPhone = phoneNumber.trim().replace('whatsapp:', '');
+  const normPhone = phoneNumber.trim();
 
   const { data: user, error } = await supabase
     .from('users')
@@ -284,18 +283,6 @@ export async function saveMessageLog(
   if (error) console.error('Failed to log message to DB:', error);
 }
 
-/**
- * Update last interaction time for WhatsApp session state (Step 14)
- */
-export async function updateWhatsAppSession(userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('whatsapp_sessions')
-    .upsert({
-      user_id: userId,
-      last_interaction: new Date().toISOString()
-    });
-  if (error) console.error('Failed to upsert whatsapp session:', error);
-}
 
 /**
  * Log a daily risk analysis score (Step 9)

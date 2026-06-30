@@ -835,16 +835,14 @@ export default function App() {
     
     if (session && session.user && isSupabaseConfigured()) {
       const isTelegram = userPhoneInput.startsWith('telegram:');
-      const normPhone = isTelegram ? userPhoneInput : userPhoneInput.trim().replace('whatsapp:', '');
-      const activeChannel = isTelegram ? 'telegram' : 'whatsapp';
       
       try {
         const { error } = await supabase
           .from('users')
           .upsert({
             id: session.user.id,
-            phone_number: normPhone || null,
-            channel: activeChannel
+            phone_number: isTelegram ? userPhoneInput : null,
+            channel: isTelegram ? 'telegram' : 'web'
           });
         
         if (error) throw error;
@@ -854,7 +852,6 @@ export default function App() {
         alert('Failed to save configuration: ' + err.message);
       }
     } else {
-      localStorage.setItem('USER_PHONE_NUMBER', userPhoneInput);
       alert('DeadlineOS configuration saved locally!');
     }
   };
@@ -963,24 +960,6 @@ export default function App() {
           </>
         )}
 
-        {/* User WhatsApp Phone Configuration */}
-        <div className="flex flex-col gap-3 pb-4 border-b border-outline/20">
-          <div>
-            <h3 className="font-sans font-bold text-xs text-white">WhatsApp Integration Channel</h3>
-            <p className="text-[10px] text-on-surface-variant mt-0.5">Enter your phone number to synchronize targets created over WhatsApp.</p>
-          </div>
-          <input
-            type="text"
-            placeholder="e.g. +1234567890"
-            value={isTelegramConnected ? '' : userPhoneInput}
-            onChange={(e) => setUserPhoneInput(e.target.value)}
-            disabled={isTelegramConnected}
-            className="w-full max-w-md bg-surface-container border border-outline rounded-lg px-3 py-2 text-xs text-white placeholder:text-on-surface-variant/30 focus:ring-1 focus:ring-primary outline-none disabled:opacity-50"
-          />
-          {isTelegramConnected && (
-            <p className="text-[10px] text-warning mt-0.5">WhatsApp integration is disabled because Telegram is connected. Disconnect Telegram below to use WhatsApp.</p>
-          )}
-        </div>
 
         {/* User Telegram Configuration */}
         <div className="flex flex-col gap-3 pb-4 border-b border-outline/20">

@@ -131,7 +131,7 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline/50">
               <Zap className="text-secondary w-3.5 h-3.5 fill-current" />
               <span className="font-mono text-[9px] text-secondary uppercase tracking-widest font-bold">
-                WhatsApp Webhook Enabled
+                Telegram Bot Enabled
               </span>
             </div>
 
@@ -141,7 +141,7 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
             </h1>
 
             <p className="font-sans text-on-surface-variant/80 text-base md:text-lg leading-relaxed max-w-xl">
-              An AI Chief of Staff that plans, prioritizes, schedules, and mitigates risks dynamically. Connect your WhatsApp to manage goals on the go.
+              An AI Chief of Staff that plans, prioritizes, schedules, and mitigates risks dynamically. Connect your Telegram to manage goals on the go.
             </p>
 
             {/* Feature small bullet stats */}
@@ -156,8 +156,8 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
               <div className="flex gap-3">
                 <Globe className="text-secondary w-5 h-5 shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="text-xs font-bold text-white">WhatsApp Sync</h4>
-                  <p className="text-[10px] text-on-surface-variant leading-normal">Text plans and done logs straight to WhatsApp.</p>
+                  <h4 className="text-xs font-bold text-white">Telegram Sync</h4>
+                  <p className="text-[10px] text-on-surface-variant leading-normal">Link Telegram to plan deadlines and check tasks on the go.</p>
                 </div>
               </div>
             </div>
@@ -205,7 +205,7 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
                     {isSignUp ? 'Create Account' : 'Sign In to Workspace'}
                   </h2>
                   <p className="text-[10px] text-on-surface-variant">
-                    {isSignUp ? 'Sign up to configure your WhatsApp planner' : 'Enter your credentials to unlock your dashboard'}
+                    {isSignUp ? 'Sign up to configure your Telegram planner' : 'Enter your credentials to unlock your dashboard'}
                   </p>
                 </div>
 

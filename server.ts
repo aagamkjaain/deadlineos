@@ -13,7 +13,6 @@ import {
   updateTaskSubtasks,
   postponeTask,
   saveMessageLog,
-  updateWhatsAppSession,
   saveRiskRecord,
   getLatestRisk,
   isSupabaseConfigured,
@@ -46,76 +45,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Parse basic auth for Twilio media downloads
-const twilioAuth =
-  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-    ? {
-        username: process.env.TWILIO_ACCOUNT_SID,
-        password: process.env.TWILIO_AUTH_TOKEN
-      }
-    : undefined;
 
-/**
- * Helper to generate TwiML reply
- */
-function sendTwilioReply(res: express.Response, message: string) {
-  res.type('text/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${escapeXml(message)}</Message>
-</Response>`);
-}
-
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case '<': return '&lt;';
-      case '>': return '&gt;';
-      case '&': return '&amp;';
-      case '\'': return '&apos;';
-      case '"': return '&quot;';
-      default: return c;
-    }
-  });
-}
-
-/**
- * Step 13: Voice Note Transcription pipeline using Gemini
- */
-async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API key is not configured.');
-  }
-
-  // 1. Download audio file from Twilio
-  const response = await axios({
-    method: 'get',
-    url: mediaUrl,
-    responseType: 'arraybuffer',
-    auth: twilioAuth
-  });
-
-  const audioBuffer = Buffer.from(response.data);
-  const base64Audio = audioBuffer.toString('base64');
-
-  // 2. Call Gemini model to transcribe the audio directly
-  const ai = new GoogleGenAI({ apiKey });
-  const transcriptionResult = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: [
-      {
-        inlineData: {
-          mimeType: String(response.headers['content-type'] || 'audio/ogg'),
-          data: base64Audio
-        }
-      },
-      'Transcribe this voice note exactly as spoken. Do not add any preamble or punctuation. Just return the text.'
-    ]
-  });
-
-  return transcriptionResult.text?.trim() || '';
-}
 
 /**
  * Step 5: Intent Classifier using Gemini
@@ -166,7 +96,6 @@ Output ONLY the exact intent string.`,
  */
 async function executeUserIntent(userId: string, messageText: string): Promise<string> {
   const intent = await classifyIntent(messageText);
-  await updateWhatsAppSession(userId);
 
   switch (intent) {
     case 'HELP': {
@@ -406,67 +335,7 @@ ${triage.skip.map(t => `✗ ${t}`).join('\n')}`;
   }
 }
 
-/**
- * Webhook main route (Step 3)
- */
-app.post('/api/whatsapp/webhook', async (req, res) => {
-  const body = req.body;
-  const fromPhone = body.From || ''; // e.g. "whatsapp:+123456789"
-  let messageText = body.Body || '';
-  const numMedia = parseInt(body.NumMedia || '0');
 
-  if (!fromPhone) {
-    return res.status(400).send('Missing From phone number.');
-  }
-
-  // Sync databases check
-  if (!isSupabaseConfigured()) {
-    return sendTwilioReply(
-      res,
-      '⚠️ DeadlineOS system configuration is incomplete. Database parameters are missing.'
-    );
-  }
-
-  try {
-    // 1. Identify User (Step 4)
-    const user = await getUserByPhoneNumber(fromPhone);
-    if (!user) {
-      const formattedPhone = fromPhone.replace('whatsapp:', '');
-      return sendTwilioReply(
-        res,
-        `📱 Phone number ${formattedPhone} is not linked to any active DeadlineOS account. Please log in to the web dashboard, go to Settings, and connect your phone number.`
-      );
-    }
-
-    // 2. Handle voice notes (Step 13)
-    if (numMedia > 0) {
-      const mediaUrl = body.MediaUrl0;
-      const contentType = body.MediaContentType0 || '';
-      
-      if (mediaUrl && contentType.startsWith('audio/')) {
-        try {
-          messageText = await transcribeVoiceMessage(mediaUrl);
-          await saveMessageLog(user.id, 'inbound', `[Voice Note] ${messageText}`);
-        } catch (voiceErr: any) {
-          console.error(voiceErr);
-          return sendTwilioReply(res, '⚠️ Failed to transcribe your voice note. Please type it instead.');
-        }
-      }
-    } else {
-      await saveMessageLog(user.id, 'inbound', messageText);
-    }
-
-    // 3. Classify and route message intent
-    const reply = await executeUserIntent(user.id, messageText);
-    return sendTwilioReply(res, reply);
-  } catch (error: any) {
-    console.error(error);
-    return sendTwilioReply(
-      res,
-      '🤖 Temporary agent failure. Please verify settings and try again.'
-    );
-  }
-});
 
 // Serve frontend assets in production
 app.get('/api/ml/productivity/:userId', async (req, res) => {
