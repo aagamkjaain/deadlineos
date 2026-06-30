@@ -18,23 +18,6 @@ var supabase = createClient(
   supabaseUrl || "https://placeholder.supabase.co",
   supabaseKey || "placeholder"
 );
-function isSupabaseConfigured() {
-  return supabaseUrl !== "" && supabaseUrl !== "placeholder" && supabaseKey !== "" && supabaseKey !== "placeholder";
-}
-async function getUserByPhoneNumber(phoneNumber) {
-  if (!isSupabaseConfigured()) {
-    throw new Error("Supabase client is not configured. Please add SUPABASE_URL and SUPABASE_KEY to your environment/settings.");
-  }
-  const normPhone = phoneNumber.trim().replace("whatsapp:", "");
-  const { data: user, error } = await supabase.from("users").select("*").eq("phone_number", normPhone).single();
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null;
-    }
-    throw error;
-  }
-  return user;
-}
 async function createGoal(userId, title, project, estimatedHours, difficulty, impact, subtasks, customCountdownSeconds) {
   const taskSubtasks = subtasks.map((text) => ({ text, completed: false }));
   const { data: newTask, error } = await supabase.from("tasks").insert({
@@ -106,13 +89,6 @@ async function saveMessageLog(userId, direction, messageText) {
     message: messageText
   });
   if (error) console.error("Failed to log message to DB:", error);
-}
-async function updateWhatsAppSession(userId) {
-  const { error } = await supabase.from("whatsapp_sessions").upsert({
-    user_id: userId,
-    last_interaction: (/* @__PURE__ */ new Date()).toISOString()
-  });
-  if (error) console.error("Failed to upsert whatsapp session:", error);
 }
 async function saveRiskRecord(userId, riskScore, riskLevel, reason) {
   const { error } = await supabase.from("risk_analysis").insert({
@@ -444,63 +420,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-var twilioAuth = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN ? {
-  username: process.env.TWILIO_ACCOUNT_SID,
-  password: process.env.TWILIO_AUTH_TOKEN
-} : void 0;
-function sendTwilioReply(res, message) {
-  res.type("text/xml");
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${escapeXml(message)}</Message>
-</Response>`);
-}
-function escapeXml(unsafe) {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case "&":
-        return "&amp;";
-      case "'":
-        return "&apos;";
-      case '"':
-        return "&quot;";
-      default:
-        return c;
-    }
-  });
-}
-async function transcribeVoiceMessage(mediaUrl) {
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    throw new Error("Gemini API key is not configured.");
-  }
-  const response = await axios({
-    method: "get",
-    url: mediaUrl,
-    responseType: "arraybuffer",
-    auth: twilioAuth
-  });
-  const audioBuffer = Buffer.from(response.data);
-  const base64Audio = audioBuffer.toString("base64");
-  const ai = new GoogleGenAI2({ apiKey });
-  const transcriptionResult = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        inlineData: {
-          mimeType: String(response.headers["content-type"] || "audio/ogg"),
-          data: base64Audio
-        }
-      },
-      "Transcribe this voice note exactly as spoken. Do not add any preamble or punctuation. Just return the text."
-    ]
-  });
-  return transcriptionResult.text?.trim() || "";
-}
 async function classifyIntent(messageText) {
   const apiKey = getApiKey();
   if (!apiKey) return "GENERAL_CHAT";
@@ -538,7 +457,6 @@ Output ONLY the exact intent string.`,
 }
 async function executeUserIntent(userId, messageText) {
   const intent = await classifyIntent(messageText);
-  await updateWhatsAppSession(userId);
   switch (intent) {
     case "HELP": {
       const helpMessage = `\u{1F916} *DeadlineOS Commands Guide*
@@ -726,52 +644,77 @@ ${triage.skip.map((t) => `\u2717 ${t}`).join("\n")}`;
     }
   }
 }
-app.post("/api/whatsapp/webhook", async (req, res) => {
-  const body = req.body;
-  const fromPhone = body.From || "";
-  let messageText = body.Body || "";
-  const numMedia = parseInt(body.NumMedia || "0");
-  if (!fromPhone) {
-    return res.status(400).send("Missing From phone number.");
-  }
-  if (!isSupabaseConfigured()) {
-    return sendTwilioReply(
-      res,
-      "\u26A0\uFE0F DeadlineOS system configuration is incomplete. Database parameters are missing."
-    );
+app.get("/api/ml/productivity/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  console.log(`[ML API] Request received for userId: "${userId}"`);
+  if (!userId) {
+    console.warn("[ML API] Request rejected: missing userId");
+    return res.status(400).json({ error: "Missing userId parameter" });
   }
   try {
-    const user = await getUserByPhoneNumber(fromPhone);
-    if (!user) {
-      const formattedPhone = fromPhone.replace("whatsapp:", "");
-      return sendTwilioReply(
-        res,
-        `\u{1F4F1} Phone number ${formattedPhone} is not linked to any active DeadlineOS account. Please log in to the web dashboard, go to Settings, and connect your phone number.`
-      );
-    }
-    if (numMedia > 0) {
-      const mediaUrl = body.MediaUrl0;
-      const contentType = body.MediaContentType0 || "";
-      if (mediaUrl && contentType.startsWith("audio/")) {
-        try {
-          messageText = await transcribeVoiceMessage(mediaUrl);
-          await saveMessageLog(user.id, "inbound", `[Voice Note] ${messageText}`);
-        } catch (voiceErr) {
-          console.error(voiceErr);
-          return sendTwilioReply(res, "\u26A0\uFE0F Failed to transcribe your voice note. Please type it instead.");
+    console.log(`[ML API] Fetching tasks from Supabase for user: ${userId}`);
+    const userTasks = await getTasksByUserId(userId);
+    console.log(`[ML API] Supabase query complete. Found ${userTasks?.length || 0} tasks.`);
+    const tasksPayload = (userTasks || []).map((t) => ({
+      id: t.id,
+      title: t.title,
+      project: t.project,
+      status: t.status,
+      countdownSeconds: t.countdown_seconds,
+      progress: t.progress,
+      difficulty: t.difficulty,
+      impact: t.impact,
+      postponedCount: t.postponed_count,
+      createdAt: t.created_at
+    }));
+    const { spawn } = await import("child_process");
+    const pythonExecutable = process.platform === "win32" ? "python" : "python3";
+    console.log(`[ML API] Spawning Python subprocess: "${pythonExecutable} ml_pipeline/predict.py"`);
+    const pyProcess = spawn(pythonExecutable, ["ml_pipeline/predict.py"]);
+    let outputData = "";
+    let errorData = "";
+    pyProcess.on("error", (err) => {
+      console.error("[ML API] Failed to spawn Python process:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to start ML engine", details: err.message });
+      }
+    });
+    pyProcess.stdout.on("data", (chunk) => {
+      outputData += chunk.toString();
+    });
+    pyProcess.stderr.on("data", (chunk) => {
+      errorData += chunk.toString();
+    });
+    pyProcess.on("close", (code) => {
+      console.log(`[ML API] Python subprocess closed with exit code: ${code}`);
+      if (code !== 0) {
+        console.error("[ML API] Python prediction script error:", errorData);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "ML engine error", details: errorData });
+        }
+        return;
+      }
+      try {
+        console.log(`[ML API] Parsing Python stdout payload (length: ${outputData.length})`);
+        const result = JSON.parse(outputData.trim());
+        if (!res.headersSent) {
+          res.json(result);
+        }
+      } catch (parseErr) {
+        console.error("[ML API] Failed to parse Python model response:", outputData, parseErr);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to parse ML response" });
         }
       }
-    } else {
-      await saveMessageLog(user.id, "inbound", messageText);
+    });
+    console.log(`[ML API] Writing tasks payload to Python stdin (payload count: ${tasksPayload.length})`);
+    pyProcess.stdin.write(JSON.stringify(tasksPayload));
+    pyProcess.stdin.end();
+  } catch (err) {
+    console.error("[ML API] Fatal error in route handler:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Server prediction failure", details: err.message });
     }
-    const reply = await executeUserIntent(user.id, messageText);
-    return sendTwilioReply(res, reply);
-  } catch (error) {
-    console.error(error);
-    return sendTwilioReply(
-      res,
-      "\u{1F916} Temporary agent failure. Please verify settings and try again."
-    );
   }
 });
 if (process.env.NODE_ENV === "production") {

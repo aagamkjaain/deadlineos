@@ -150,10 +150,9 @@ def run_prediction():
         if col not in df_encoded.columns:
             df_encoded[col] = 0
             
-    # Drop features
-    df_features = df_encoded.drop(columns=['description', 'status'])
-    if 'priority' in df_features.columns:
-        df_features = df_features.drop(columns=['priority'])
+    # Drop features safely
+    cols_to_drop = [c for c in ['description', 'status', 'priority'] if c in df_encoded.columns]
+    df_features = df_encoded.drop(columns=cols_to_drop)
         
     df_features = pd.concat([df_features.reset_index(drop=True), tfidf_df.reset_index(drop=True)], axis=1)
     

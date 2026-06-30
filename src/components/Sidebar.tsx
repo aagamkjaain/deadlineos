@@ -45,7 +45,7 @@ export default function Sidebar({
         <div className="flex items-center gap-3">
           <Terminal className="text-primary w-6 h-6" />
           <h1 className="font-sans text-xl font-bold tracking-tight text-white">
-            Deadline<span className="text-primary">OS</span>
+            Task<span className="text-primary">Jerker</span>
           </h1>
         </div>
         <p className="font-mono text-[10px] text-on-surface-variant tracking-wider uppercase mt-1 opacity-70 px-1">

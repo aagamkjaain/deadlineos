@@ -560,7 +560,7 @@ export default function IntelligenceView({
         <div className="flex flex-col items-center justify-center py-20 space-y-4 animate-pulse">
           <Sparkles className="w-8 h-8 text-primary animate-spin" />
           <p className="font-mono text-xs text-on-surface-variant tracking-wider uppercase">
-            DeadlineOS is structuring your learning paths...
+            Task Jerker is structuring your learning paths...
           </p>
         </div>
       ) : generatedPlan ? (
@@ -624,7 +624,7 @@ export default function IntelligenceView({
                     <div className="p-3 bg-secondary/10 border border-secondary/30 rounded-lg text-left space-y-2">
                       <span className="font-mono text-[8px] text-secondary font-bold uppercase tracking-wider block">Google Calendar Permission</span>
                       <p className="text-[10px] text-on-surface-variant leading-normal">
-                        A deadline was detected in your request ({generatedPlan.deadlineDate}). Do you permit DeadlineOS to sync this task to your Google Calendar?
+                        A deadline was detected in your request ({generatedPlan.deadlineDate}). Do you permit Task Jerker to sync this task to your Google Calendar?
                       </p>
                       <label className="flex items-center gap-2 cursor-pointer mt-1 select-none">
                         <input

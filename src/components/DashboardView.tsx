@@ -558,7 +558,7 @@ export default function DashboardView({
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({
-                summary: `🎯 DeadlineOS: ${clickedTaskTitle}`,
+                summary: `🎯 Task Jerker: ${clickedTaskTitle}`,
                 description: `Project: ${clickedTaskProject}\nPriority: ${clickedTaskStatus.toUpperCase()}`,
                 start: { dateTime: startDateTime },
                 end: { dateTime: endDateTime }
@@ -702,7 +702,7 @@ export default function DashboardView({
                 <span className="text-error font-bold">
                   {criticalTasksCount} high-priority {criticalTasksCount === 1 ? 'deadline' : 'deadlines'}
                 </span>{' '}
-                pending. DeadlineOS has prioritized your active work blocks dynamically.
+                pending. Task Jerker has prioritized your active work blocks dynamically.
               </>
             ) : (
               'You have no high-priority deadlines pending. Keep up the good work!'

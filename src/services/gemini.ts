@@ -135,7 +135,7 @@ export async function generateTaskPlan(prompt: string, currentDateStr: string = 
   if (getAiProvider() === 'ollama') {
     const url = getOllamaUrl();
     const model = getOllamaModel();
-    const systemInstruction = `You are DeadlineOS AI Task Brain.
+    const systemInstruction = `You are Task Jerker AI Task Brain.
 Decompose the goal into subtasks (3 to 6 tasks), estimate the effort required in hours, estimate the difficulty (1 to 10), and estimate the impact (1 to 10).
 
 Identify if a date, deadline, or duration constraint is mentioned in the user's prompt (e.g. "by Friday", "in 3 days", "on June 28th", "deadline is 2026-06-27").
@@ -211,7 +211,7 @@ Output ONLY valid JSON matching this schema:
     contents: `Please break down the following goal/task into a structured plan: "${prompt}".
 The current date and time is: ${currentDateStr}.`,
     config: {
-      systemInstruction: `You are DeadlineOS AI Task Brain.
+      systemInstruction: `You are Task Jerker AI Task Brain.
 Decompose the goal into subtasks (3 to 6 tasks), estimate the effort required in hours, estimate the difficulty (1 to 10), and estimate the impact (1 to 10).
 
 Identify if a date, deadline, or duration constraint is mentioned in the user's prompt (e.g. "by Friday", "in 3 days", "on June 28th", "deadline is 2026-06-27").
@@ -294,7 +294,7 @@ export async function generatePanicTriage(
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'You are the DeadlineOS Panic Mode Agent. Triage the given subtasks into "must_do" (essential for MVP/survival/deployment) and "skip" (nice-to-have, documentation, cleanups, styles) based on the remaining hours constraint. Output ONLY valid JSON matching this schema:\n{\n  "must_do": ["task1", "task2"],\n  "skip": ["task3"],\n  "justification": "reason"\n}' },
+          { role: 'system', content: 'You are the Task Jerker Panic Mode Agent. Triage the given subtasks into "must_do" (essential for MVP/survival/deployment) and "skip" (nice-to-have, documentation, cleanups, styles) based on the remaining hours constraint. Output ONLY valid JSON matching this schema:\n{\n  "must_do": ["task1", "task2"],\n  "skip": ["task3"],\n  "justification": "reason"\n}' },
           { role: 'user', content: `Goal/Task: "${taskTitle}"\nSubtasks: ${JSON.stringify(subtasks)}\nTime Remaining: ${hoursLeft} hours` }
         ],
         stream: false,
@@ -315,7 +315,7 @@ export async function generatePanicTriage(
     model: 'gemini-2.5-flash',
     contents: `Goal/Task: "${taskTitle}"\nSubtasks: ${JSON.stringify(subtasks)}\nTime Remaining: ${hoursLeft} hours`,
     config: {
-      systemInstruction: 'You are the DeadlineOS Panic Mode Agent. Triage the given subtasks into "must_do" (essential for MVP/survival/deployment) and "skip" (nice-to-have, documentation, cleanups, styles) based on the remaining hours constraint. Output ONLY valid JSON matching the specified schema.',
+      systemInstruction: 'You are the Task Jerker Panic Mode Agent. Triage the given subtasks into "must_do" (essential for MVP/survival/deployment) and "skip" (nice-to-have, documentation, cleanups, styles) based on the remaining hours constraint. Output ONLY valid JSON matching the specified schema.',
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',
@@ -365,7 +365,7 @@ export async function generateScopeReduction(
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'You are the DeadlineOS Anti-Procrastination Coach. Trim the scope of the subtasks by roughly 30% to salvage a slipping deadline, keeping only the bare minimum core value. Output ONLY valid JSON matching this schema:\n{\n  "subtasks": ["trimmed_task1"],\n  "justification": "reason"\n}' },
+          { role: 'system', content: 'You are the Task Jerker Anti-Procrastination Coach. Trim the scope of the subtasks by roughly 30% to salvage a slipping deadline, keeping only the bare minimum core value. Output ONLY valid JSON matching this schema:\n{\n  "subtasks": ["trimmed_task1"],\n  "justification": "reason"\n}' },
           { role: 'user', content: `Task: "${taskTitle}"\nCurrent Subtasks: ${JSON.stringify(subtasks)}` }
         ],
         stream: false,
@@ -386,7 +386,7 @@ export async function generateScopeReduction(
     model: 'gemini-2.5-flash',
     contents: `Task: "${taskTitle}"\nCurrent Subtasks: ${JSON.stringify(subtasks)}`,
     config: {
-      systemInstruction: 'You are the DeadlineOS Anti-Procrastination Coach. Trim the scope of the subtasks by roughly 30% to salvage a slipping deadline, keeping only the bare minimum core value. Output ONLY valid JSON matching this schema.',
+      systemInstruction: 'You are the Task Jerker Anti-Procrastination Coach. Trim the scope of the subtasks by roughly 30% to salvage a slipping deadline, keeping only the bare minimum core value. Output ONLY valid JSON matching this schema.',
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',
@@ -428,7 +428,7 @@ export async function getVoicePlanningResponse(userSpeechInput: string): Promise
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: 'You are the voice assistant for DeadlineOS, a distraction-free productivity dashboard. Respond to the user request in a single, short, concise, highly motivating sentence (maximum 25 words). Keep it verbal and spoken-friendly.' },
+          { role: 'system', content: 'You are the voice assistant for Task Jerker, a distraction-free productivity dashboard. Respond to the user request in a single, short, concise, highly motivating sentence (maximum 25 words). Keep it verbal and spoken-friendly.' },
           { role: 'user', content: userSpeechInput }
         ],
         stream: false
@@ -448,7 +448,7 @@ export async function getVoicePlanningResponse(userSpeechInput: string): Promise
     model: 'gemini-2.5-flash',
     contents: userSpeechInput,
     config: {
-      systemInstruction: 'You are the voice assistant for DeadlineOS, a distraction-free productivity dashboard. Respond to the user request in a single, short, concise, highly motivating sentence (maximum 25 words). Keep it verbal and spoken-friendly.'
+      systemInstruction: 'You are the voice assistant for Task Jerker, a distraction-free productivity dashboard. Respond to the user request in a single, short, concise, highly motivating sentence (maximum 25 words). Keep it verbal and spoken-friendly.'
     }
   });
 
@@ -553,7 +553,7 @@ export async function parseVoiceCommand(commandText: string, currentTasks: any[]
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: `You are the voice control processor for DeadlineOS.
+          { role: 'system', content: `You are the voice control processor for Task Jerker.
 Analyze the user's spoken command and determine the appropriate action.
 You must classify the command into one of the following actions:
 1. CREATE_TASK: User wants to add a new task, goal, or deadline. Look for titles and durations (e.g. "due in 5 hours", "estimated 3 hours"). Default duration is 3 hours. Status can be "critical" (if high priority or urgent), "deferred", or "normal".
@@ -598,7 +598,7 @@ Output ONLY a valid JSON object matching this schema:
     model: 'gemini-2.5-flash',
     contents: `User command: "${commandText}"\nCurrent tasks in system: ${JSON.stringify(currentTasks.map(t => ({ id: t.id, title: t.title, status: t.status })))}`,
     config: {
-      systemInstruction: `You are the voice control processor for DeadlineOS.
+      systemInstruction: `You are the voice control processor for Task Jerker.
 Analyze the user's spoken command and determine the appropriate action.
 You must classify the command into one of the following actions:
 1. CREATE_TASK: User wants to add a new task, goal, or deadline. Look for titles and durations (e.g. "due in 5 hours", "estimated 3 hours"). Default duration is 3 hours. Status can be "critical" (if high priority or urgent), "deferred", or "normal".

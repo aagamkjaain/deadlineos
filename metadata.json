@@ -1,5 +1,5 @@
 {
-  "name": "DeadlineOS",
+  "name": "Task Jerker",
   "description": "An AI Chief of Staff that plans, prioritizes, schedules, and tracks software deadlines in a distraction-free environment.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

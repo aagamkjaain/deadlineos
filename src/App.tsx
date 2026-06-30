@@ -846,13 +846,13 @@ export default function App() {
           });
         
         if (error) throw error;
-        alert('DeadlineOS configuration saved successfully!');
+        alert('Task Jerker configuration saved successfully!');
       } catch (err: any) {
         console.error('Failed to save profile changes to Supabase:', err);
         alert('Failed to save configuration: ' + err.message);
       }
     } else {
-      alert('DeadlineOS configuration saved locally!');
+      alert('Task Jerker configuration saved locally!');
     }
   };
 
@@ -887,7 +887,7 @@ export default function App() {
       <div>
         <h2 className="text-white text-3xl font-bold tracking-tight flex items-center gap-2">
           <Settings className="text-primary w-8 h-8" />
-          <span>DeadlineOS Configurations</span>
+          <span>Task Jerker Configurations</span>
         </h2>
         <p className="text-on-surface-variant text-sm mt-1">
           Calibrate intelligence parameters, configure API credentials, and link workspaces.

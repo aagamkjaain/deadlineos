@@ -99,7 +99,7 @@ async function executeUserIntent(userId: string, messageText: string): Promise<s
 
   switch (intent) {
     case 'HELP': {
-      const helpMessage = `🤖 *DeadlineOS Commands Guide*
+      const helpMessage = `🤖 *Task Jerker Commands Guide*
       
 • *today* / *plan* - Get your daily briefing & active focus blocks
 • *done [task name/number]* - Complete a subtask
@@ -254,7 +254,7 @@ async function executeUserIntent(userId: string, messageText: string): Promise<s
       const currentRiskLevel = latestRisk ? latestRisk.risk_level.toUpperCase() : 'LOW';
       const currentReason = latestRisk ? latestRisk.reason : 'All schedules are on time.';
 
-      let reply = `⚠️ *DeadlineOS Schedule Audit*
+      let reply = `⚠️ *Task Jerker Schedule Audit*
       
 • General System Risk: *${currentRiskLevel}*
 • Details: ${currentReason}
@@ -549,7 +549,7 @@ async function handleTelegramMessage(botUrl: string, message: any) {
           await sendTelegramMessage(
             botUrl,
             chatId,
-            `🎉 *Account Connected Successfully!*\n\nYour Telegram account has been linked to your DeadlineOS account.\n\nYou can now send me goals and deadlines (e.g. "Plan AWS exam due Friday") or run commands like *today*, *risk*, *panic*, and *reschedule* directly from here!`
+            `🎉 *Account Connected Successfully!*\n\nYour Telegram account has been linked to your Task Jerker account.\n\nYou can now send me goals and deadlines (e.g. "Plan AWS exam due Friday") or run commands like *today*, *risk*, *panic*, and *reschedule* directly from here!`
           );
         }
       } catch (err: any) {
@@ -569,7 +569,7 @@ async function handleTelegramMessage(botUrl: string, message: any) {
     await sendTelegramMessage(
       botUrl,
       chatId,
-      `🤖 *Welcome to your DeadlineOS AI Assistant!*
+      `🤖 *Welcome to your Task Jerker AI Assistant!*
       
 Send me a goal or deadline (e.g. "I have a hackathon on 24th June"), and I will decompose it into a structured Action Plan, save it, and sync it to Google Calendar.
 
@@ -600,7 +600,7 @@ To pair your account, click the link in your Web Settings dashboard.`
     await sendTelegramMessage(
       botUrl,
       chatId,
-      `📱 *Telegram Account Not Linked*\n\nYour Telegram chat is not connected to a DeadlineOS profile.\n\nPlease log in to the web dashboard, go to Settings, and click *Connect Telegram Bot* to pair your account.`
+      `📱 *Telegram Account Not Linked*\n\nYour Telegram chat is not connected to a Task Jerker profile.\n\nPlease log in to the web dashboard, go to Settings, and click *Connect Telegram Bot* to pair your account.`
     );
     return;
   }

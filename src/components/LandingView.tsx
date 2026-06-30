@@ -111,7 +111,7 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
         <div className="flex items-center gap-3">
           <Terminal className="text-primary w-6 h-6" />
           <span className="font-sans text-lg font-extrabold text-white tracking-tighter">
-            Deadline<span className="text-primary">OS</span>
+            Task<span className="text-primary">Jerker</span>
           </span>
         </div>
         
@@ -311,7 +311,7 @@ export default function LandingView({ onEnterApp, session }: LandingViewProps) {
 
       {/* Trustmarks footer */}
       <footer className="mt-auto border-t border-outline/10 py-8 text-center text-[10px] text-on-surface-variant/40 font-mono">
-        © 2026 DeadlineOS Inc. Secured auth loop.
+        © 2026 Task Jerker Inc. Secured auth loop.
       </footer>
     </div>
   );
