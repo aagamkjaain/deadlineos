@@ -3,6 +3,9 @@ import "dotenv/config";
 import express from "express";
 import bodyParser from "body-parser";
 import path from "path";
+import axios from "axios";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
 
 // src/services/supabase.ts
@@ -406,6 +409,8 @@ async function getVoicePlanningResponse(userSpeechInput) {
 }
 
 // server.ts
+var __filename = fileURLToPath(import.meta.url);
+var __dirname = dirname(__filename);
 var app = express();
 var PORT = process.env.PORT || 3001;
 app.use(bodyParser.urlencoded({ extended: true }));
