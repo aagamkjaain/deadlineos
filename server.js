@@ -3,7 +3,6 @@ import "dotenv/config";
 import express from "express";
 import bodyParser from "body-parser";
 import path from "path";
-import axios from "axios";
 import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
 
 // src/services/supabase.ts
